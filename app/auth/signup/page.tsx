@@ -18,6 +18,7 @@ export default function SignupPage() {
   const [fullName, setFullName] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [showEmailSent, setShowEmailSent] = useState(false)
   const router = useRouter()
 
   const handleSignup = async (e: React.FormEvent) => {
@@ -44,7 +45,10 @@ export default function SignupPage() {
         ? `${window.location.origin}/auth/callback`
         : "https://comparelabs.ai/auth/callback"
 
-      const { error } = await supabase.auth.signUp({
+      console.log("[v0] Attempting signup with email:", email)
+      console.log("[v0] Redirect URL:", redirectUrl)
+
+      const { data, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -54,13 +58,103 @@ export default function SignupPage() {
           },
         },
       })
-      if (error) throw error
-      router.push("/auth/verify-email")
+
+      console.log("[v0] Signup response:", {
+        userExists: !!data?.user,
+        userId: data?.user?.id,
+        userEmail: data?.user?.email,
+        emailConfirmed: data?.user?.email_confirmed_at,
+        identities: data?.user?.identities?.length,
+        error: signUpError?.message,
+      })
+
+      if (signUpError) {
+        console.error("[v0] Supabase signup error details:", {
+          name: signUpError.name,
+          message: signUpError.message,
+          status: (signUpError as any).status,
+          code: (signUpError as any).code,
+        })
+      }
+
+      if (data?.user) {
+        // User was created successfully
+        console.log("[v0] User created successfully - ID:", data.user.id)
+
+        // Check if email confirmation is required
+        if (!data.user.email_confirmed_at) {
+          console.log("[v0] Email confirmation required - confirmation email should have been sent to:", email)
+          setShowEmailSent(true)
+          setIsLoading(false)
+          return
+        } else {
+          console.log("[v0] Email already confirmed or confirmation not required")
+          router.push("/auth/choose-plan")
+          return
+        }
+      }
+
+      if (signUpError) {
+        const errorMessage = signUpError.message.toLowerCase()
+
+        if (errorMessage.includes("already registered") || errorMessage.includes("already exists")) {
+          setError("An account with this email already exists. Please sign in instead.")
+          setIsLoading(false)
+          return
+        }
+
+        if (errorMessage.includes("rate limit")) {
+          console.error("[v0] Rate limit hit - check Supabase email rate limit settings")
+          setError("Too many signup attempts. Please wait a minute and try again.")
+        } else if (errorMessage.includes("email") || errorMessage.includes("mail")) {
+          console.error("[v0] Email sending failed - check Supabase SMTP configuration")
+          setError("Unable to send confirmation email. Please contact support.")
+        } else {
+          setError(signUpError.message)
+        }
+        setIsLoading(false)
+        return
+      }
+
+      console.error("[v0] Unexpected signup state - no user and no error")
+      setError("An unexpected error occurred. Please try again.")
     } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : "An error occurred")
+      console.error("[v0] Signup exception:", error)
+      setError(error instanceof Error ? error.message : "An error occurred during signup")
     } finally {
       setIsLoading(false)
     }
+  }
+
+  if (showEmailSent) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-muted p-6">
+        <div className="w-full max-w-md">
+          <Card className="shadow-xl">
+            <CardHeader className="text-center">
+              <CardTitle className="text-2xl font-bold">Check your email</CardTitle>
+              <CardDescription>We've sent a confirmation link to {email}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="text-sm text-muted-foreground space-y-2">
+                <p>Click the link in the email to confirm your account and complete signup.</p>
+                <p className="font-medium">Didn't receive the email?</p>
+                <ul className="list-disc list-inside space-y-1 ml-2">
+                  <li>Check your spam folder</li>
+                  <li>Wait a few minutes for the email to arrive</li>
+                  <li>Make sure you entered the correct email address</li>
+                </ul>
+              </div>
+              <div className="pt-4 text-center text-sm">
+                <Link href="/auth/login" className="font-medium text-primary hover:underline">
+                  Back to sign in
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
   }
 
   return (
