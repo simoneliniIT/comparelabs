@@ -78,25 +78,24 @@ export function HistorySidebar({ className }: HistorySidebarProps) {
 
   return (
     <div className={cn("w-80 border-r bg-muted/10 flex flex-col", className)}>
-      {/* Header */}
-      <div className="p-4 border-b">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Clock className="h-5 w-5 text-muted-foreground" />
-            <h2 className="font-semibold">History</h2>
+      <div className="p-3 border-b">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-1.5">
+            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+            <h2 className="text-sm font-medium">History</h2>
           </div>
-          <Button variant="ghost" size="icon" onClick={() => setIsCollapsed(true)} className="w-8 h-8">
-            <ChevronLeft className="h-4 w-4" />
+          <Button variant="ghost" size="icon" onClick={() => setIsCollapsed(true)} className="w-7 h-7">
+            <ChevronLeft className="h-3.5 w-3.5" />
           </Button>
         </div>
 
         <Button
           onClick={handleNewTopic}
-          className="w-full mt-3"
+          className="w-full h-9"
           variant={currentTopicId ? "outline" : "default"}
           disabled={isCreatingNewTopic}
         >
-          <Plus className="h-4 w-4 mr-2" />
+          <Plus className="h-3.5 w-3.5 mr-2" />
           New Conversation
         </Button>
       </div>
@@ -125,12 +124,12 @@ export function HistorySidebar({ className }: HistorySidebarProps) {
               <p className="text-xs mt-1">Start a conversation to create your first topic</p>
             </div>
           ) : (
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               {topics.map((topic) => (
                 <div
                   key={topic.id}
                   className={cn(
-                    "group relative rounded-lg p-3 cursor-pointer transition-colors",
+                    "group relative rounded-md p-2 cursor-pointer transition-colors",
                     "hover:bg-muted/50",
                     currentTopicId === topic.id && "bg-muted border",
                   )}
@@ -146,8 +145,8 @@ export function HistorySidebar({ className }: HistorySidebarProps) {
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-sm truncate">{topic.title}</h3>
-                      <div className="flex items-center gap-2 mt-1">
+                      <h3 className="text-sm truncate leading-tight">{topic.title}</h3>
+                      <div className="flex items-center gap-1.5 mt-0.5">
                         <span className="text-xs text-muted-foreground">{formatDate(topic.updated_at)}</span>
                         {topic.message_count && (
                           <>
