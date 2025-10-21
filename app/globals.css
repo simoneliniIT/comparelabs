@@ -331,9 +331,10 @@
 }
 
 @theme inline {
-  --font-sans: var(--v0-font-geist);
-  --font-mono: var(--v0-font-geist-mono);
-  --font-serif: var(--v0-font-source-serif-4);
+  /* Updated font variables to use Inter and JetBrains Mono instead of Geist */
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains-mono);
+  --font-serif: var(--font-source-serif-4);
   /* computed shadow variables below - do not modify */
   --shadow-2xs: var(--shadow-x) var(--shadow-y)
     color-mix(in srgb, var(--shadow-color) calc(var(--shadow-opacity) * 100%), transparent);
