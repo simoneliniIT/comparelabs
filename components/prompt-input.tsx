@@ -14,7 +14,7 @@ interface PromptInputProps {
   enableSummarization: boolean
   summarizationModel: string
   onResponsesReceived: (responses: ModelResponse[], prompt: string) => void
-  onSubmissionStart: (prompt: string) => void
+  onSubmissionStart: (prompt: string) => Promise<void>
   onError: (error: string) => void
   onStreamChunk?: (modelId: string, modelName: string, chunk: string) => void
   onStreamComplete?: (modelId: string, modelName: string, response: string, tokenUsage?: any) => void
@@ -71,12 +71,17 @@ export function PromptInput({
 
     setIsLoading(true)
     const currentPrompt = prompt.trim()
-    onSubmissionStart(currentPrompt)
+
+    console.log("[v0] PROMPT INPUT - Calling onSubmissionStart and waiting for topic creation...")
+    await onSubmissionStart(currentPrompt)
+    console.log("[v0] PROMPT INPUT - onSubmissionStart completed, topic should be created now")
+
     console.log("[v0] Submitting prompt:", currentPrompt)
     console.log("[v0] Summarization enabled:", enableSummarization, "Model:", summarizationModel)
 
     try {
       if (useStreaming && onStreamChunk && onStreamComplete && onStreamError) {
+        console.log("[v0] PROMPT INPUT - Starting streaming...")
         await submitToModelsStreaming(currentPrompt, selectedModels, {
           enableSummarization,
           summarizationModel,

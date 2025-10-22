@@ -1,11 +1,13 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import type React from "react"
+
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, AlertCircle, CheckCircle2, MessageSquare, RefreshCw, Copy } from "lucide-react"
+import { Loader2, AlertCircle, CheckCircle2, MessageSquare, RefreshCw, Copy, Sparkles } from "lucide-react"
 import { AI_MODELS } from "@/lib/ai-config"
 import { submitToModels, type ModelResponse } from "@/lib/api-client"
 import { MarkdownRenderer } from "@/components/markdown-renderer"
@@ -23,6 +25,7 @@ interface ResponseDisplayProps {
   enableSummarization?: boolean
   summarizationModel?: string
   summary?: string // Added prop for server-generated summary
+  topicIdRef?: React.MutableRefObject<string | null> // Added ref prop for immediate topic ID access
 }
 
 interface FollowUpConversation {
@@ -40,6 +43,7 @@ export function ResponseDisplay({
   enableSummarization = true,
   summarizationModel = "chatgpt",
   summary: serverSummary, // Renamed to serverSummary to distinguish from local state
+  topicIdRef, // Receive topic ID ref
 }: ResponseDisplayProps) {
   const [summary, setSummary] = useState<string>("")
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false)
@@ -48,13 +52,16 @@ export function ResponseDisplay({
   const [followUpConversations, setFollowUpConversations] = useState<Record<string, FollowUpConversation[]>>({})
   const [retryLoading, setRetryLoading] = useState<Record<string, boolean>>({})
   const [followUpResponses, setFollowUpResponses] = useState<Record<string, ModelResponse[]>>({})
-  const [savedResponseIds, setSavedResponseIds] = useState<Set<string>>(new Set())
+
+  const savedResponseIdsRef = useRef<Set<string>>(new Set())
+  const lastSaveCheckRef = useRef<number>(0)
 
   const { currentTopicId, addMessageToTopic } = useTopics()
 
   useEffect(() => {
     if (serverSummary) {
-      console.log("[v0] Received server-generated summary (no additional credit deducted)")
+      console.log("[v0] ========== SERVER SUMMARY RECEIVED ==========")
+      console.log("[v0] Summary length:", serverSummary.length)
       setSummary(serverSummary)
       setIsGeneratingSummary(false)
     }
@@ -68,61 +75,57 @@ export function ResponseDisplay({
   }, [isLoading, selectedModels, enableSummarization])
 
   useEffect(() => {
-    console.log("[v0] ========== RESPONSE SAVE EFFECT TRIGGERED ==========")
-    console.log("[v0] Number of responses:", responses.length)
-    console.log("[v0] Current topic ID:", currentTopicId)
-    console.log("[v0] Saved response IDs count:", savedResponseIds.size)
+    const now = Date.now()
 
-    if (responses.length > 0 && currentTopicId) {
-      console.log("[v0] Checking responses to save to topic:", currentTopicId)
-      responses.forEach(async (response, index) => {
-        const responseId = `${currentTopicId}-${response.modelId}-${response.response.substring(0, 50)}`
-
-        console.log(`[v0] Response ${index + 1}/${responses.length}:`, {
-          modelId: response.modelId,
-          modelName: response.modelName,
-          success: response.success,
-          responseLength: response.response.length,
-          alreadySaved: savedResponseIds.has(responseId),
-        })
-
-        if (response.success && response.response && !savedResponseIds.has(responseId)) {
-          console.log("[v0] ========== SAVING NEW RESPONSE ==========")
-          console.log("[v0] Topic ID:", currentTopicId)
-          console.log("[v0] Model:", response.modelName)
-          console.log("[v0] Response preview:", response.response.substring(0, 100))
-          try {
-            console.log("[v0] Calling addMessageToTopic...")
-            await addMessageToTopic(currentTopicId, "answer", response.response, response.modelName)
-            setSavedResponseIds((prev) => new Set(prev).add(responseId))
-            console.log("[v0] Response saved successfully")
-          } catch (error) {
-            console.error("[v0] ========== FAILED TO SAVE RESPONSE ==========")
-            console.error("[v0] Error:", error)
-            console.error("[v0] Error stack:", error instanceof Error ? error.stack : "No stack trace")
-          }
-        } else if (savedResponseIds.has(responseId)) {
-          console.log("[v0] Response already saved, skipping:", response.modelName)
-        } else if (!response.success) {
-          console.log("[v0] Response failed, not saving:", response.modelName)
-        } else if (!response.response) {
-          console.log("[v0] Response empty, not saving:", response.modelName)
-        }
-      })
-    } else {
-      if (responses.length === 0) {
-        console.log("[v0] No responses to save")
-      }
-      if (!currentTopicId) {
-        console.log("[v0] No current topic ID, cannot save responses")
-      }
+    // Throttle to once per second
+    if (now - lastSaveCheckRef.current < 1000) {
+      return
     }
-    console.log("[v0] ========== RESPONSE SAVE EFFECT COMPLETE ==========")
-  }, [responses, currentTopicId])
+
+    const topicId = topicIdRef?.current || currentTopicId
+
+    if (responses.length === 0 || !topicId) {
+      return
+    }
+
+    lastSaveCheckRef.current = now
+
+    // Check for new responses to save
+    const responsesToSave = responses.filter((response) => {
+      const responseId = `${topicId}-${response.modelId}`
+      return response.success && response.response && !savedResponseIdsRef.current.has(responseId)
+    })
+
+    if (responsesToSave.length === 0) {
+      return
+    }
+
+    console.log("[v0] ========== SAVING RESPONSES ==========")
+    console.log("[v0] Topic ID (from ref):", topicIdRef?.current)
+    console.log("[v0] Topic ID (from context):", currentTopicId)
+    console.log("[v0] Using topic ID:", topicId)
+    console.log("[v0] New responses to save:", responsesToSave.length)
+
+    // Save all new responses
+    responsesToSave.forEach(async (response) => {
+      const responseId = `${topicId}-${response.modelId}`
+      try {
+        console.log("[v0] Saving response from:", response.modelName)
+        await addMessageToTopic(topicId, "answer", response.response, response.modelName)
+        savedResponseIdsRef.current.add(responseId)
+        console.log("[v0] Response saved successfully")
+      } catch (error) {
+        console.error("[v0] Failed to save response from", response.modelName, ":", error)
+      }
+    })
+
+    console.log("[v0] ========== SAVE COMPLETE ==========")
+  }, [responses, currentTopicId, topicIdRef, addMessageToTopic])
 
   useEffect(() => {
-    console.log("[v0] Topic changed, clearing saved response IDs")
-    setSavedResponseIds(new Set())
+    console.log("[v0] Topic changed, clearing saved response tracking")
+    savedResponseIdsRef.current.clear()
+    lastSaveCheckRef.current = 0
   }, [currentTopicId])
 
   const handleFollowUp = async (modelId: string) => {
@@ -279,53 +282,95 @@ export function ResponseDisplay({
       </div>
 
       {enableSummarization && (
-        <Card className="w-full max-w-full overflow-hidden">
-          <CardHeader>
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <CardTitle className="flex items-start sm:items-center gap-2 flex-wrap text-sm sm:text-base">
-                <div className="w-8 h-8 rounded-lg gradient-bg flex items-center justify-center flex-shrink-0">
-                  <span className="text-white text-sm font-bold">AI</span>
+        <div className="relative w-full max-w-full overflow-hidden">
+          {/* Gradient border effect */}
+          <div className="absolute inset-0 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-2xl blur-sm opacity-20"></div>
+
+          <Card className="relative w-full max-w-full overflow-hidden border-2 border-primary/20 bg-gradient-to-br from-background via-background to-primary/5 shadow-xl">
+            <CardHeader className="pb-6 pt-8 px-6 sm:px-8">
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                <div className="flex items-start gap-4">
+                  <div className="relative flex-shrink-0">
+                    <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg">
+                      <Sparkles className="h-7 w-7 text-white" />
+                    </div>
+                    <div className="absolute -top-1 -right-1">
+                      <Badge className="bg-gradient-to-r from-yellow-400 to-orange-500 text-white border-0 text-xs px-2 py-0.5 shadow-md">
+                        PRO
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <div className="flex-1">
+                    <CardTitle className="text-2xl sm:text-3xl font-bold mb-2 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
+                      The Super Answer
+                    </CardTitle>
+                    <p className="text-sm sm:text-base text-muted-foreground leading-relaxed">
+                      AI-powered synthesis combining the best insights from all models
+                    </p>
+                  </div>
                 </div>
-                <span className="break-words">The Super Answer - Combines the best of each model</span>
-              </CardTitle>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => copyToClipboard(summary)}
-                disabled={!summary || isGeneratingSummary}
-                className="flex items-center gap-1 self-start sm:self-auto flex-shrink-0"
-              >
-                <Copy className="h-4 w-4" />
-                <span className="hidden sm:inline">Copy</span>
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="w-full max-w-full overflow-x-hidden">
-            {isGeneratingSummary ? (
-              <div className="flex items-center gap-3 py-4 flex-wrap">
-                <Loader2 className="h-5 w-5 animate-spin text-primary flex-shrink-0" />
-                <span className="text-muted-foreground text-sm break-words">
-                  Generating comprehensive AI-powered summary...
-                </span>
+
+                <Button
+                  variant="outline"
+                  size="default"
+                  onClick={() => copyToClipboard(summary)}
+                  disabled={!summary || isGeneratingSummary}
+                  className="flex items-center gap-2 self-start sm:self-auto flex-shrink-0 border-primary/30 hover:bg-primary/10 hover:border-primary/50 transition-all"
+                >
+                  <Copy className="h-4 w-4" />
+                  <span>Copy Answer</span>
+                </Button>
               </div>
-            ) : summary ? (
-              <div className="prose prose-sm max-w-none dark:prose-invert break-words overflow-x-hidden">
-                <MarkdownRenderer content={summary} />
-              </div>
-            ) : isLoading ? (
-              <div className="flex items-center gap-3 py-4 flex-wrap">
-                <Loader2 className="h-5 w-5 animate-spin text-primary flex-shrink-0" />
-                <span className="text-muted-foreground text-sm break-words">
-                  Waiting for model responses to generate summary...
-                </span>
-              </div>
-            ) : (
-              <p className="text-muted-foreground py-4 text-sm break-words">
-                Summary will appear here after model responses are received.
-              </p>
-            )}
-          </CardContent>
-        </Card>
+            </CardHeader>
+
+            <CardContent className="w-full max-w-full overflow-x-hidden px-6 sm:px-8 pb-8">
+              {isGeneratingSummary ? (
+                <div className="flex flex-col items-center justify-center gap-4 py-12">
+                  <div className="relative">
+                    <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                    <div className="absolute inset-0 h-10 w-10 animate-ping rounded-full bg-primary/20"></div>
+                  </div>
+                  <div className="text-center space-y-2">
+                    <p className="text-base font-medium">Generating Super Answer...</p>
+                    <p className="text-sm text-muted-foreground">
+                      Analyzing and synthesizing responses from all models
+                    </p>
+                  </div>
+                </div>
+              ) : summary ? (
+                <div className="prose prose-base max-w-none dark:prose-invert break-words overflow-x-hidden prose-headings:font-bold prose-headings:text-foreground prose-p:text-foreground/90 prose-p:leading-relaxed prose-strong:text-foreground prose-strong:font-semibold">
+                  <MarkdownRenderer content={summary} />
+                </div>
+              ) : isLoading ? (
+                <div className="flex flex-col items-center justify-center gap-4 py-12">
+                  <div className="relative">
+                    <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                    <div className="absolute inset-0 h-10 w-10 animate-ping rounded-full bg-primary/20"></div>
+                  </div>
+                  <div className="text-center space-y-2">
+                    <p className="text-base font-medium">Waiting for model responses...</p>
+                    <p className="text-sm text-muted-foreground">
+                      The Super Answer will be generated once all models complete
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-12 space-y-3">
+                  <div className="w-16 h-16 mx-auto rounded-full bg-muted flex items-center justify-center">
+                    <Sparkles className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <p className="text-base font-medium text-muted-foreground">
+                    Submit a prompt to generate your Super Answer
+                  </p>
+                  <p className="text-sm text-muted-foreground/80">
+                    Get the best insights from multiple AI models in one comprehensive response
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 w-full max-w-full">

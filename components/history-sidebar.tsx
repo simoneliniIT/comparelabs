@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useCallback, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, usePathname } from "next/navigation"
 import { useTopics } from "@/lib/contexts/topics-context"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -16,9 +16,9 @@ interface HistorySidebarProps {
 export function HistorySidebar({ className }: HistorySidebarProps) {
   const isMobile = useIsMobile()
   const [isCollapsed, setIsCollapsed] = useState(false)
-  const [isCreatingNewTopic, setIsCreatingNewTopic] = useState(false)
   const { topics, currentTopicId, isLoading, error, startNewTopic, selectTopic, deleteTopic } = useTopics()
   const router = useRouter()
+  const pathname = usePathname()
 
   useEffect(() => {
     setIsCollapsed(isMobile)
@@ -45,24 +45,22 @@ export function HistorySidebar({ className }: HistorySidebarProps) {
   }
 
   const handleNewTopic = useCallback(() => {
-    if (isCreatingNewTopic) {
-      console.log("[v0] New topic creation already in progress, ignoring click")
-      return
-    }
+    console.log("[v0] ========== NEW CONVERSATION BUTTON CLICKED ==========")
+    console.log("[v0] Current topic ID:", currentTopicId)
+    console.log("[v0] Current pathname:", pathname)
 
-    console.log("[v0] New Topic button clicked - clearing topic and navigating to compare")
-    setIsCreatingNewTopic(true)
+    startNewTopic()
+    console.log("[v0] startNewTopic() called - topic should be cleared")
 
-    try {
-      startNewTopic()
+    if (pathname !== "/compare") {
+      console.log("[v0] Navigating to /compare")
       router.push("/compare")
-    } finally {
-      // Reset the flag after a short delay to allow navigation to complete
-      setTimeout(() => {
-        setIsCreatingNewTopic(false)
-      }, 1000)
+    } else {
+      console.log("[v0] Already on /compare, no navigation needed")
     }
-  }, [isCreatingNewTopic, startNewTopic, router])
+
+    console.log("[v0] ========== NEW CONVERSATION BUTTON HANDLER COMPLETE ==========")
+  }, [currentTopicId, pathname, startNewTopic, router])
 
   if (isCollapsed) {
     return (
@@ -89,12 +87,7 @@ export function HistorySidebar({ className }: HistorySidebarProps) {
           </Button>
         </div>
 
-        <Button
-          onClick={handleNewTopic}
-          className="w-full h-9"
-          variant={currentTopicId ? "outline" : "default"}
-          disabled={isCreatingNewTopic}
-        >
+        <Button onClick={handleNewTopic} className="w-full h-9" variant={currentTopicId ? "outline" : "default"}>
           <Plus className="h-3.5 w-3.5 mr-2" />
           New Conversation
         </Button>

@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, useMemo, useCallback, type ReactNode } from "react"
+import { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef, type ReactNode } from "react"
 import { createClient } from "@/lib/supabase/client"
 
 export interface Topic {
@@ -40,6 +40,7 @@ interface TopicsContextType {
   deleteTopic: (topicId: string) => Promise<void>
   loadTopics: () => Promise<void>
   loadTopicMessages: () => Promise<void>
+  setIsStreaming: (streaming: boolean) => void
 }
 
 const TopicsContext = createContext<TopicsContextType | null>(null)
@@ -54,20 +55,8 @@ export function TopicsProvider({ children }: { children: ReactNode }) {
   const [isAuthEnabled, setIsAuthEnabled] = useState(false)
   const [supabase, setSupabase] = useState<ReturnType<typeof createClient> | null>(null)
 
-  useEffect(() => {
-    try {
-      console.log("[v0] Initializing Supabase client in TopicsProvider")
-      const client = createClient()
-      setSupabase(client)
-      setIsAuthEnabled(true)
-      console.log("[v0] Supabase client created successfully in TopicsProvider")
-    } catch (error) {
-      console.error("[v0] Failed to create Supabase client:", error)
-      setError(error instanceof Error ? error.message : "Failed to initialize Supabase client")
-      setIsAuthEnabled(false)
-      setIsLoading(false)
-    }
-  }, [])
+  const loadTopicsTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const isStreamingRef = useRef(false)
 
   const loadTopics = useCallback(async () => {
     if (!supabase) {
@@ -140,6 +129,40 @@ export function TopicsProvider({ children }: { children: ReactNode }) {
       setIsLoading(false)
     }
   }, [supabase])
+
+  useEffect(() => {
+    try {
+      console.log("[v0] Initializing Supabase client in TopicsProvider")
+      const client = createClient()
+      setSupabase(client)
+      setIsAuthEnabled(true)
+      console.log("[v0] Supabase client created successfully in TopicsProvider")
+    } catch (error) {
+      console.error("[v0] Failed to create Supabase client:", error)
+      setError(error instanceof Error ? error.message : "Failed to initialize Supabase client")
+      setIsAuthEnabled(false)
+      setIsLoading(false)
+    }
+  }, [])
+
+  const debouncedLoadTopics = useCallback(() => {
+    // Clear any pending reload
+    if (loadTopicsTimeoutRef.current) {
+      clearTimeout(loadTopicsTimeoutRef.current)
+    }
+
+    // Don't reload during streaming to prevent flickering
+    if (isStreamingRef.current) {
+      console.log("[v0] Skipping topic reload during streaming to prevent flickering")
+      return
+    }
+
+    // Debounce the reload by 500ms
+    loadTopicsTimeoutRef.current = setTimeout(() => {
+      console.log("[v0] Debounced topic reload executing")
+      loadTopics()
+    }, 500)
+  }, [loadTopics])
 
   useEffect(() => {
     if (supabase) {
@@ -296,7 +319,17 @@ export function TopicsProvider({ children }: { children: ReactNode }) {
           await addMessageToTopic(data.id, "question", firstQuestion)
 
           setCurrentTopicId(data.id)
-          await loadTopics()
+
+          setTopics((prev) => [
+            {
+              id: data.id,
+              title,
+              created_at: data.created_at,
+              updated_at: data.updated_at,
+              message_count: 1,
+            },
+            ...prev,
+          ])
 
           console.log("[v0] Topic creation completed, current topic ID:", data.id)
           return data.id
@@ -314,7 +347,7 @@ export function TopicsProvider({ children }: { children: ReactNode }) {
         return localTopicId
       }
     },
-    [supabase, isAuthEnabled, loadTopics],
+    [supabase, isAuthEnabled],
   )
 
   const addMessageToTopic = useCallback(
@@ -366,7 +399,7 @@ export function TopicsProvider({ children }: { children: ReactNode }) {
 
           await supabase.from("topics").update({ updated_at: new Date().toISOString() }).eq("id", topicId)
 
-          await loadTopics()
+          debouncedLoadTopics()
         } catch (dbError) {
           console.log("[v0] Database operation failed during message add:", dbError)
         }
@@ -375,7 +408,7 @@ export function TopicsProvider({ children }: { children: ReactNode }) {
         setError(err instanceof Error ? err.message : "Failed to add message")
       }
     },
-    [supabase, isAuthEnabled, loadTopics],
+    [supabase, isAuthEnabled, debouncedLoadTopics],
   )
 
   const generateTopicTitle = async (question: string): Promise<string> => {
@@ -443,13 +476,29 @@ export function TopicsProvider({ children }: { children: ReactNode }) {
           setCurrentTopicMessages([])
         }
 
-        await loadTopics()
+        setTopics((prev) => prev.filter((t) => t.id !== topicId))
       } catch (err) {
         console.error("Error deleting topic:", err)
         setError(err instanceof Error ? err.message : "Failed to delete topic")
       }
     },
-    [supabase, isAuthEnabled, currentTopicId, loadTopics],
+    [supabase, isAuthEnabled, currentTopicId],
+  )
+
+  const setIsStreaming = useCallback(
+    (streaming: boolean) => {
+      console.log("[v0] Setting streaming state:", streaming)
+      isStreamingRef.current = streaming
+
+      // If streaming just ended, reload topics after a delay
+      if (!streaming) {
+        setTimeout(() => {
+          console.log("[v0] Streaming ended, reloading topics")
+          loadTopics()
+        }, 1000)
+      }
+    },
+    [loadTopics],
   )
 
   const value: TopicsContextType = useMemo(
@@ -468,6 +517,7 @@ export function TopicsProvider({ children }: { children: ReactNode }) {
       deleteTopic,
       loadTopics,
       loadTopicMessages,
+      setIsStreaming,
     }),
     [
       topics,
@@ -484,6 +534,7 @@ export function TopicsProvider({ children }: { children: ReactNode }) {
       deleteTopic,
       loadTopics,
       loadTopicMessages,
+      setIsStreaming,
     ],
   )
 

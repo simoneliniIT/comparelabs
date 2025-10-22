@@ -141,12 +141,17 @@ export async function POST(request: NextRequest) {
 
         await Promise.all(modelPromises)
 
+        console.log("[v0] ========== ALL MODEL RESPONSES COMPLETE ==========")
+        console.log("[v0] Enable summarization:", enableSummarization)
+        console.log("[v0] Successful responses count:", successfulResponses.length)
+        console.log("[v0] Summarization model:", summarizationModel)
+
         if (enableSummarization && successfulResponses.length > 1) {
           try {
+            console.log(`[v0] ========== STARTING SUMMARY GENERATION ==========`)
             console.log(`[v0] Generating summary using ${summarizationModel || "chatgpt"}...`)
 
             const summaryPrompt = `You are a synthesis model that combines multiple AI-generated answers into one superior response.
-.
 
 Original Question: ${prompt}
 
@@ -163,15 +168,11 @@ Task:
    - Unique insights worth preserving.
    - Any factual contradictions.
 
-2. Write a single **integrated “meta-answer”** that:
+2. Write a single **integrated "meta-answer"** that:
    - Captures the most accurate facts.
    - Includes the most insightful ideas or creative perspectives.
    - Reads fluently and naturally, as if written by one expert.
    - Avoids repetition, contradictions, or filler.
-
-3. After the answer, include a short “analysis” section (max 50 words):
-   > *Why this is the best synthesis*
-   Example: “Blends GPT-5’s clarity, Claude’s reasoning depth, and Gemini’s factual precision.”
 
 Provide a thorough analysis (aim for 300-500 words) that helps users understand the nuances between these AI models.`
 
@@ -187,6 +188,7 @@ Provide a thorough analysis (aim for 300-500 words) that helps users understand 
               // Stream the summary chunks
               for await (const chunk of summaryResult.textStream) {
                 summaryText += chunk
+                console.log(`[v0] Summary chunk received (length: ${chunk.length})`)
                 const summaryChunkEvent = `data: ${JSON.stringify({
                   type: "summary-chunk",
                   chunk,
@@ -205,6 +207,9 @@ Provide a thorough analysis (aim for 300-500 words) that helps users understand 
               }
 
               // Send complete summary event
+              console.log(`[v0] ========== SUMMARY COMPLETE ==========`)
+              console.log(`[v0] Total summary length: ${summaryText.length}`)
+              console.log(`[v0] Summary preview: ${summaryText.substring(0, 100)}...`)
               const summaryEvent = `data: ${JSON.stringify({
                 type: "summary",
                 summary: summaryText,
@@ -220,13 +225,21 @@ Provide a thorough analysis (aim for 300-500 words) that helps users understand 
               console.log(`[v0] Summary generated successfully using ${summaryModelConfig.name}`)
             }
           } catch (error: any) {
+            console.error(`[v0] ========== SUMMARY GENERATION FAILED ==========`)
             console.error(`[v0] Summary generation failed:`, error)
-            // Don't fail the entire request if summary fails
+            console.error(`[v0] Error stack:`, error.stack)
             const summaryErrorEvent = `data: ${JSON.stringify({
               type: "summary-error",
               error: error.message,
             })}\n\n`
             controller.enqueue(encoder.encode(summaryErrorEvent))
+          }
+        } else {
+          console.log("[v0] ========== SKIPPING SUMMARY GENERATION ==========")
+          if (!enableSummarization) {
+            console.log("[v0] Reason: Summarization disabled")
+          } else if (successfulResponses.length <= 1) {
+            console.log("[v0] Reason: Not enough successful responses (need 2+, got", successfulResponses.length, ")")
           }
         }
 

@@ -71,8 +71,10 @@ export async function submitToModelsStreaming(
     onSummary?: (summary: string) => void
   },
 ): Promise<void> {
-  console.log("[v0] Submitting to models with streaming:", selectedModels)
-  console.log("[v0] Options:", options)
+  console.log("[v0] ========== STARTING STREAMING REQUEST ==========")
+  console.log("[v0] Selected models:", selectedModels)
+  console.log("[v0] Summarization enabled:", options.enableSummarization)
+  console.log("[v0] Summarization model:", options.summarizationModel)
 
   const response = await fetch("/api/chat/stream", {
     method: "POST",
@@ -138,11 +140,14 @@ export async function submitToModelsStreaming(
                 options.onSummary(summaryBuffer)
               }
             } else if (data.type === "summary" && options.onSummary) {
+              console.log("[v0] ========== COMPLETE SUMMARY RECEIVED ==========")
+              console.log("[v0] Summary length:", data.summary.length)
               options.onSummary(data.summary)
             } else if (data.type === "summary-error") {
-              console.error("[v0] Summary generation error:", data.error)
+              console.error("[v0] ========== SUMMARY ERROR ==========")
+              console.error("[v0] Error:", data.error)
             } else if (data.type === "done") {
-              console.log("[v0] Streaming complete")
+              console.log("[v0] ========== STREAMING COMPLETE ==========")
             }
           } catch (e) {
             console.error("[v0] Failed to parse SSE data:", e)

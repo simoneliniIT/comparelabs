@@ -28,6 +28,8 @@ function ComparePageContent() {
     message?: string
   }>({ show: false })
 
+  const currentTopicIdRef = useRef<string | null>(null)
+
   const {
     currentTopicId,
     currentTopicMessages,
@@ -39,7 +41,13 @@ function ComparePageContent() {
     isLoading: isTopicsLoading,
     isAuthEnabled,
     startNewTopic: contextStartNewTopic,
+    setIsStreaming,
   } = useTopics()
+
+  useEffect(() => {
+    currentTopicIdRef.current = currentTopicId
+    console.log("[v0] Topic ID synced to ref:", currentTopicId)
+  }, [currentTopicId])
 
   const searchParams = useSearchParams()
   const topicFromUrl = searchParams.get("topic")
@@ -128,27 +136,6 @@ function ComparePageContent() {
     console.log("[v0] Current topic ID:", currentTopicId)
     console.log("[v0] Is auth enabled:", isAuthEnabled)
 
-    let topicId = currentTopicId
-
-    if (!topicId && prompt) {
-      console.log("[v0] ========== CREATING NEW TOPIC ==========")
-      console.log("[v0] No current topic, creating new topic with prompt:", prompt)
-      try {
-        console.log("[v0] Calling createTopic function...")
-        topicId = await createTopic(prompt)
-        console.log("[v0] createTopic returned ID:", topicId)
-        console.log("[v0] Topic created successfully with ID:", topicId)
-      } catch (error) {
-        console.error("[v0] ========== TOPIC CREATION FAILED ==========")
-        console.error("[v0] Error:", error)
-        console.error("[v0] Error stack:", error instanceof Error ? error.stack : "No stack trace")
-      }
-    } else if (topicId) {
-      console.log("[v0] Using existing topic:", topicId)
-    } else {
-      console.log("[v0] WARNING: No prompt available for topic creation")
-    }
-
     console.log("[v0] Setting responses state...")
     setResponses(newResponses)
     console.log("[v0] Responses set, stopping loading...")
@@ -159,8 +146,9 @@ function ComparePageContent() {
   const handleSubmissionStart = async (prompt: string) => {
     console.log("[v0] ========== SUBMISSION STARTED ==========")
     console.log("[v0] Prompt:", prompt)
-    console.log("[v0] Current topic ID:", currentTopicId)
-    console.log("[v0] Is auth enabled:", isAuthEnabled)
+    console.log("[v0] Current topic ID BEFORE:", currentTopicId)
+
+    setIsStreaming(true)
 
     setCurrentPrompt(prompt)
     setIsLoading(true)
@@ -169,26 +157,35 @@ function ComparePageContent() {
     setSummary("") // Clear previous summary when starting new query
     setShowUpgradePrompt({ show: false }) // Hide upgrade prompt when starting new query
 
+    if (!currentTopicId) {
+      console.log("[v0] ========== CREATING TOPIC BEFORE STREAMING ==========")
+      try {
+        const topicId = await createTopic(prompt)
+        console.log("[v0] Topic created with ID:", topicId)
+
+        currentTopicIdRef.current = topicId
+        console.log("[v0] Topic ID stored in ref:", currentTopicIdRef.current)
+
+        // Wait for state to propagate
+        await new Promise((resolve) => setTimeout(resolve, 150))
+        console.log("[v0] Topic creation complete, ref ID:", currentTopicIdRef.current)
+      } catch (error) {
+        console.error("[v0] Topic creation failed:", error)
+      }
+    } else {
+      console.log("[v0] Adding follow-up question to existing topic:", currentTopicId)
+      try {
+        await addMessageToTopic(currentTopicId, "question", prompt)
+        console.log("[v0] Follow-up question added")
+      } catch (error) {
+        console.error("[v0] Failed to add question:", error)
+      }
+    }
+
     setTimeout(() => {
       responsesRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
     }, 100)
 
-    // Initial questions are saved when creating the topic in handleResponsesReceived
-    if (currentTopicId) {
-      console.log("[v0] ========== ADDING FOLLOW-UP QUESTION ==========")
-      console.log("[v0] Adding follow-up question to existing topic:", currentTopicId)
-      try {
-        console.log("[v0] Calling addMessageToTopic...")
-        await addMessageToTopic(currentTopicId, "question", prompt)
-        console.log("[v0] Follow-up question added successfully")
-      } catch (error) {
-        console.error("[v0] ========== FAILED TO ADD QUESTION ==========")
-        console.error("[v0] Error:", error)
-        console.error("[v0] Error stack:", error instanceof Error ? error.stack : "No stack trace")
-      }
-    } else {
-      console.log("[v0] No current topic - question will be saved when topic is created in handleResponsesReceived")
-    }
     console.log("[v0] ========== SUBMISSION START COMPLETE ==========")
   }
 
@@ -225,6 +222,12 @@ function ComparePageContent() {
     setStreamingResponses((prev) => {
       const newState = { ...prev }
       delete newState[modelId]
+
+      if (Object.keys(newState).length === 0) {
+        console.log("[v0] All streams complete, setting streaming state to false")
+        setIsStreaming(false)
+      }
+
       return newState
     })
   }
@@ -252,6 +255,12 @@ function ComparePageContent() {
     setStreamingResponses((prev) => {
       const newState = { ...prev }
       delete newState[modelId]
+
+      if (Object.keys(newState).length === 0) {
+        console.log("[v0] All streams complete (with errors), setting streaming state to false")
+        setIsStreaming(false)
+      }
+
       return newState
     })
   }
@@ -282,8 +291,13 @@ function ComparePageContent() {
   }
 
   const handleSummary = (summaryText: string) => {
-    console.log("[v0] Summary received from server (no additional credit deducted)")
+    console.log("[v0] ========== SUMMARY RECEIVED IN COMPARE PAGE ==========")
+    console.log("[v0] Summary length:", summaryText.length)
+    console.log("[v0] Summary preview:", summaryText.substring(0, 100))
+    console.log("[v0] Current summary state before update:", summary.substring(0, 50))
     setSummary(summaryText)
+    console.log("[v0] Summary state updated")
+    console.log("[v0] ========== SUMMARY HANDLING COMPLETE ==========")
   }
 
   const displayResponses = responses.map((response) => {
@@ -381,6 +395,7 @@ function ComparePageContent() {
                 enableSummarization={enableSummarization}
                 summarizationModel={summarizationModel}
                 summary={summary}
+                topicIdRef={currentTopicIdRef}
               />
             </div>
           </main>
