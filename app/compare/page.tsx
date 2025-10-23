@@ -239,7 +239,7 @@ function ComparePageContent() {
       if (Object.keys(newState).length === 0) {
         console.log("[v0] All streams complete, setting streaming state to false")
         setIsStreaming(false)
-        setIsLoading(false)
+        // Don't set isLoading to false here - let the summary generation complete first
       }
 
       return newState
@@ -310,6 +310,9 @@ function ComparePageContent() {
     console.log("[v0] Summary preview:", summaryText.substring(0, 100))
     console.log("[v0] Current summary state before update:", summary.substring(0, 50))
     setSummary(summaryText)
+    if (summaryText.length > 0) {
+      setIsLoading(false)
+    }
     console.log("[v0] Summary state updated")
     console.log("[v0] ========== SUMMARY HANDLING COMPLETE ==========")
   }
