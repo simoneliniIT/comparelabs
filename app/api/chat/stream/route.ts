@@ -69,6 +69,7 @@ export async function POST(request: NextRequest) {
           }
 
           try {
+            console.log(`[v0] ========== STARTING ${modelConfig.name.toUpperCase()} ==========`)
             console.log(`[v0] Calling ${modelConfig.name} via AI SDK for user ${user.id}...`)
 
             const result = await streamModelResponse(modelId, prompt, request.signal)
@@ -76,16 +77,30 @@ export async function POST(request: NextRequest) {
             let promptTokens = 0
             let completionTokens = 0
 
-            // Stream the response chunks
-            for await (const chunk of result.textStream) {
-              fullResponse += chunk
-              const streamEvent = `data: ${JSON.stringify({
-                type: "chunk",
-                modelId,
-                modelName: modelConfig.name,
-                chunk,
-              })}\n\n`
-              controller.enqueue(encoder.encode(streamEvent))
+            try {
+              // Stream the response chunks
+              for await (const chunk of result.textStream) {
+                fullResponse += chunk
+                const streamEvent = `data: ${JSON.stringify({
+                  type: "chunk",
+                  modelId,
+                  modelName: modelConfig.name,
+                  chunk,
+                })}\n\n`
+                controller.enqueue(encoder.encode(streamEvent))
+              }
+
+              console.log(`[v0] ========== ${modelConfig.name.toUpperCase()} STREAM COMPLETE ==========`)
+              console.log(`[v0] Total response length: ${fullResponse.length} characters`)
+            } catch (streamError: any) {
+              console.error(`[v0] ========== ${modelConfig.name.toUpperCase()} STREAM ERROR ==========`)
+              console.error(`[v0] Stream error:`, streamError)
+              // If stream fails, still try to send what we have
+              if (fullResponse.length > 0) {
+                console.log(`[v0] Partial response available: ${fullResponse.length} characters`)
+              } else {
+                throw streamError // Re-throw if we have no response at all
+              }
             }
 
             try {
@@ -108,6 +123,7 @@ export async function POST(request: NextRequest) {
             })
 
             // Send complete event
+            console.log(`[v0] Sending complete event for ${modelConfig.name}`)
             const completeEvent = `data: ${JSON.stringify({
               type: "complete",
               modelId,
@@ -127,6 +143,7 @@ export async function POST(request: NextRequest) {
 
             await logUsage(user, modelId, promptTokens, completionTokens, totalCost)
           } catch (error: any) {
+            console.error(`[v0] ========== ${modelConfig?.name || modelId} FAILED ==========`)
             console.error(`[v0] ${modelConfig?.name || modelId} failed for user ${user.id}:`, error)
             const errorEvent = `data: ${JSON.stringify({
               type: "error",

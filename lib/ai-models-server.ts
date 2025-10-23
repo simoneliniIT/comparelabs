@@ -246,7 +246,7 @@ export async function streamModelResponse(modelId: string, prompt: string, signa
   const result = streamText({
     model: gateway(model.modelString),
     prompt,
-    maxTokens: 4096,
+    maxTokens: 16384, // Increased from 4096 to prevent truncation
     temperature: 0.7,
     abortSignal: signal,
   })
