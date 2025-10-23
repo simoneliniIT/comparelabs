@@ -47,7 +47,7 @@ export function HowItWorksSection() {
             <div className="order-1 md:order-2">
               <div className="relative rounded-2xl overflow-hidden shadow-2xl border border-border">
                 <Image
-                  src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/question-VmvEAzqjdRDFTvE5zt9vYxUf3UDtwA.png"
+                  src="/images/design-mode/question.png"
                   alt="Ask your question interface"
                   width={1200}
                   height={800}
@@ -62,7 +62,7 @@ export function HowItWorksSection() {
             <div className="order-1">
               <div className="relative rounded-2xl overflow-hidden shadow-2xl border border-border">
                 <Image
-                  src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/model%20list-eF8AQtahftRa8FrtaZPoBWbtkxuL1i.png"
+                  src="/images/design-mode/model%20list.png"
                   alt="Select AI models"
                   width={1200}
                   height={800}
@@ -138,7 +138,7 @@ export function HowItWorksSection() {
             <div className="order-1 md:order-2">
               <div className="relative rounded-2xl overflow-hidden shadow-2xl border border-border">
                 <Image
-                  src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/side%20by%20side-jzxVTHxkW6ss7yg8doGMHq06SrBHdP.png"
+                  src="/images/design-mode/side%20by%20side.png"
                   alt="Compare responses side by side"
                   width={1200}
                   height={800}
@@ -153,7 +153,7 @@ export function HowItWorksSection() {
             <div className="order-1">
               <div className="relative rounded-2xl overflow-hidden shadow-2xl border border-border bg-gradient-to-br from-primary/5 via-primary/10 to-primary/5">
                 <Image
-                  src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/superanswer-CI8p9jgrSNWxfWhCYqCepZaQLP4m1X.png"
+                  src="/images/design-mode/superanswer.png"
                   alt="The Super Answer - AI-powered synthesis"
                   width={1200}
                   height={800}
