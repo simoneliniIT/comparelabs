@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Loader2, AlertCircle, CheckCircle2, MessageSquare, RefreshCw, Copy, Sparkles } from "lucide-react"
 import { AI_MODELS } from "@/lib/ai-config"
-import { submitToModels, type ModelResponse } from "@/lib/api-client"
+import { submitToModels, submitToModelsStreaming, type ModelResponse } from "@/lib/api-client"
 import { MarkdownRenderer } from "@/components/markdown-renderer"
 import { ExportDropdown } from "@/components/export-dropdown"
 import { useTopics } from "@/lib/contexts/topics-context"
@@ -156,12 +156,35 @@ export function ResponseDisplay({
 
       contextualPrompt += `New follow-up question: ${followUpPrompt}`
 
-      const response = await submitToModels(contextualPrompt, [modelId])
+      let followUpResponse: ModelResponse | null = null
+      let accumulatedResponse = ""
 
-      if (response.results.length > 0) {
-        const followUpResponse = response.results[0]
+      await submitToModelsStreaming(contextualPrompt, [modelId], {
+        enableSummarization: false,
+        onChunk: (chunkModelId, modelName, chunk) => {
+          accumulatedResponse += chunk
+        },
+        onComplete: (chunkModelId, modelName, response) => {
+          followUpResponse = {
+            modelId: chunkModelId,
+            modelName,
+            response,
+            success: true,
+          }
+        },
+        onError: (chunkModelId, modelName, error) => {
+          followUpResponse = {
+            modelId: chunkModelId,
+            modelName,
+            response: "",
+            success: false,
+            error,
+          }
+        },
+      })
 
-        if (currentTopicId && followUpResponse.success && followUpResponse.response) {
+      if (followUpResponse && followUpResponse.success) {
+        if (currentTopicId && followUpResponse.response) {
           console.log("[v0] Saving follow-up answer to topic:", currentTopicId)
           await addMessageToTopic(currentTopicId, "answer", followUpResponse.response, followUpResponse.modelName)
         }
@@ -181,9 +204,12 @@ export function ResponseDisplay({
           ...prev,
           [modelId]: [...(prev[modelId] || []), followUpResponse],
         }))
-      }
 
-      console.log("[v0] Follow-up response:", response)
+        console.log("[v0] Follow-up response received successfully")
+      } else if (followUpResponse) {
+        console.error("[v0] Follow-up error:", followUpResponse.error)
+        throw new Error(followUpResponse.error || "Follow-up request failed")
+      }
     } catch (error) {
       console.error("[v0] Follow-up error:", error)
     } finally {
