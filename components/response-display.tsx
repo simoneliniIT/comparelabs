@@ -350,9 +350,9 @@ export function ResponseDisplay({
                     <div className="absolute inset-0 h-10 w-10 animate-ping rounded-full bg-primary/20"></div>
                   </div>
                   <div className="text-center space-y-2">
-                    <p className="text-base font-medium">Waiting for model responses...</p>
+                    <p className="text-base font-medium">Waiting for all models to finish...</p>
                     <p className="text-sm text-muted-foreground">
-                      The Super Answer will be generated once all models complete
+                      The Super Answer will start generating once all model responses are complete
                     </p>
                   </div>
                 </div>

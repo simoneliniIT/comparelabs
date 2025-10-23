@@ -9,6 +9,13 @@ export async function POST(request: NextRequest) {
   try {
     const { prompt, models, enableSummarization, summarizationModel } = await request.json()
 
+    console.log("[v0] ========== NEW COMPARISON REQUEST ==========")
+    console.log("[v0] Prompt:", prompt?.substring(0, 100) + "...")
+    console.log("[v0] Models requested:", models)
+    console.log("[v0] Number of models:", models?.length)
+    console.log("[v0] Enable summarization:", enableSummarization)
+    console.log("[v0] Summarization model:", summarizationModel)
+
     if (!prompt || !models || !Array.isArray(models)) {
       return new Response(JSON.stringify({ error: "Invalid request parameters" }), { status: 400 })
     }
@@ -59,14 +66,27 @@ export async function POST(request: NextRequest) {
         const AI_MODELS = getServerAIModels()
         const successfulResponses: Array<{ modelId: string; modelName: string; response: string }> = []
 
+        console.log("[v0] ========== STARTING MODEL PROCESSING ==========")
+        console.log("[v0] Models to process:", models)
+        console.log("[v0] Available AI models:", Object.keys(AI_MODELS))
+
+        // Check if all requested models exist in AI_MODELS
+        const missingModels = models.filter((modelId: string) => !AI_MODELS[modelId])
+        if (missingModels.length > 0) {
+          console.log("[v0] ⚠️  WARNING: Some requested models are not available:", missingModels)
+        }
+
         // Process each model in parallel
         const modelPromises = models.map(async (modelId: string) => {
           const modelConfig = AI_MODELS[modelId]
           if (!modelConfig) {
+            console.log(`[v0] ❌ Model not found in AI_MODELS: ${modelId}`)
             const errorEvent = `data: ${JSON.stringify({ type: "error", modelId, error: `Unknown model: ${modelId}` })}\n\n`
             controller.enqueue(encoder.encode(errorEvent))
             return
           }
+
+          console.log(`[v0] ✓ Model ${modelConfig.name} (${modelId}) found, starting processing...`)
 
           const modelTimeout = 45000 // 45 seconds per model
           const timeoutPromise = new Promise<never>((_, reject) => {
@@ -172,6 +192,12 @@ export async function POST(request: NextRequest) {
               response: fullResponse,
             })
 
+            console.log(`[v0] ✓ ${modelConfig.name} added to successfulResponses array`)
+            console.log(`[v0] Current successfulResponses count: ${successfulResponses.length}`)
+            console.log(
+              `[v0] Current successfulResponses models: ${successfulResponses.map((r) => r.modelName).join(", ")}`,
+            )
+
             console.log(`[v0] ========== SENDING COMPLETE EVENT FOR ${modelConfig.name.toUpperCase()} ==========`)
             const completeEvent = `data: ${JSON.stringify({
               type: "complete",
@@ -217,11 +243,28 @@ export async function POST(request: NextRequest) {
         await Promise.all(modelPromises)
 
         console.log("[v0] ========== ALL MODEL RESPONSES COMPLETE ==========")
-        console.log("[v0] Enable summarization:", enableSummarization)
+        console.log("[v0] Enable summarization (raw value):", enableSummarization)
+        console.log("[v0] Enable summarization (type):", typeof enableSummarization)
+        console.log("[v0] Enable summarization (boolean check):", enableSummarization === true)
+        console.log("[v0] Enable summarization (truthy check):", !!enableSummarization)
         console.log("[v0] Successful responses count:", successfulResponses.length)
+        console.log("[v0] Successful responses models:", successfulResponses.map((r) => r.modelName).join(", "))
+        console.log(
+          "[v0] Successful responses details:",
+          successfulResponses.map((r) => ({
+            modelId: r.modelId,
+            modelName: r.modelName,
+            responseLength: r.response.length,
+          })),
+        )
         console.log("[v0] Summarization model:", summarizationModel)
+        console.log("[v0] Condition check: enableSummarization && successfulResponses.length > 1")
+        console.log("[v0] Condition result:", enableSummarization && successfulResponses.length > 1)
 
-        if (enableSummarization && successfulResponses.length > 1) {
+        const shouldGenerateSummary = !!enableSummarization && successfulResponses.length > 1
+        console.log("[v0] Should generate summary (explicit):", shouldGenerateSummary)
+
+        if (shouldGenerateSummary) {
           try {
             console.log(`[v0] ========== STARTING SUMMARY GENERATION ==========`)
             console.log(`[v0] Generating summary using ${summarizationModel || "chatgpt"}...`)
