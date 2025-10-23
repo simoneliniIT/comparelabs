@@ -11,21 +11,20 @@ const _geistMono = V0_Font_Geist_Mono({ subsets: ['latin'], weight: ["100","200"
 const _sourceSerif_4 = V0_Font_Source_Serif_4({ subsets: ['latin'], weight: ["200","300","400","500","600","700","800","900"], variable: '--v0-font-source-serif-4' })
 const _v0_fontVariables = `${_geist.variable} ${_geistMono.variable} ${_sourceSerif_4.variable}`
 
-// Assign loaders to consts at module scope
 const inter = Inter({
-  weight: ["100","200","300","400","500","600","700","800","900"],
+  weight: ["100", "200", "300", "400", "500", "600", "700", "800", "900"],
   subsets: ["latin"],
   variable: "--font-inter",
 })
 
 const jetbrainsMono = JetBrains_Mono({
-  weight: ["100","200","300","400","500","600","700","800"],
+  weight: ["100", "200", "300", "400", "500", "600", "700", "800"],
   subsets: ["latin"],
   variable: "--font-jetbrains-mono",
 })
 
 const sourceSerif4 = Source_Serif_4({
-  weight: ["200","300","400","500","600","700","800","900"],
+  weight: ["200", "300", "400", "500", "600", "700", "800", "900"],
   subsets: ["latin"],
   variable: "--font-source-serif-4",
 })
@@ -38,13 +37,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html
-      lang="en"
-      className={`${inter.variable} ${jetbrainsMono.variable} ${sourceSerif4.variable} antialiased`}
-    >
-      <body className={`min-h-screen bg-background text-foreground font-sans ${_v0_fontVariables}`}>
-        {children}
-      </body>
+    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} ${sourceSerif4.variable} antialiased`}>
+      <body className={`min-h-screen bg-background text-foreground font-sans ${_v0_fontVariables}`}>{children}</body>
     </html>
   )
 }
