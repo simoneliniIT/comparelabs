@@ -68,19 +68,39 @@ export async function POST(request: NextRequest) {
             return
           }
 
+          const modelTimeout = 45000 // 45 seconds per model
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error("Model response timeout")), modelTimeout)
+          })
+
           try {
             console.log(`[v0] ========== STARTING ${modelConfig.name.toUpperCase()} ==========`)
-            console.log(`[v0] Calling ${modelConfig.name} via AI SDK for user ${user.id}...`)
+            console.log(`[v0] Model ID: ${modelId}`)
+            console.log(`[v0] Model string: ${modelConfig.modelString}`)
+            console.log(`[v0] Max tokens: 8192`)
+            console.log(`[v0] Timeout: ${modelTimeout}ms`)
 
-            const result = await streamModelResponse(modelId, prompt, request.signal)
+            const result = await Promise.race([streamModelResponse(modelId, prompt, request.signal), timeoutPromise])
+
             let fullResponse = ""
             let promptTokens = 0
             let completionTokens = 0
+            let finishReason = "unknown"
+            let chunkCount = 0
 
             try {
-              // Stream the response chunks
+              console.log(`[v0] ${modelConfig.name}: Starting stream consumption...`)
               for await (const chunk of result.textStream) {
+                chunkCount++
                 fullResponse += chunk
+
+                // Log every 10th chunk to avoid spam
+                if (chunkCount % 10 === 0) {
+                  console.log(
+                    `[v0] ${modelConfig.name}: Received chunk #${chunkCount}, total length: ${fullResponse.length} chars`,
+                  )
+                }
+
                 const streamEvent = `data: ${JSON.stringify({
                   type: "chunk",
                   modelId,
@@ -90,30 +110,60 @@ export async function POST(request: NextRequest) {
                 controller.enqueue(encoder.encode(streamEvent))
               }
 
-              console.log(`[v0] ========== ${modelConfig.name.toUpperCase()} STREAM COMPLETE ==========`)
+              console.log(`[v0] ========== ${modelConfig.name.toUpperCase()} STREAM LOOP COMPLETED ==========`)
+              console.log(`[v0] Total chunks received: ${chunkCount}`)
               console.log(`[v0] Total response length: ${fullResponse.length} characters`)
+              console.log(`[v0] Response preview (first 200 chars): ${fullResponse.substring(0, 200)}...`)
+              console.log(
+                `[v0] Response preview (last 200 chars): ...${fullResponse.substring(Math.max(0, fullResponse.length - 200))}`,
+              )
+
+              try {
+                finishReason = (await result.finishReason) || "stop"
+                console.log(`[v0] ${modelConfig.name}: Finish reason = "${finishReason}"`)
+                if (finishReason === "length") {
+                  console.log(`[v0] ⚠️  ${modelConfig.name} hit maxTokens limit (8192) - response was truncated`)
+                } else if (finishReason === "stop") {
+                  console.log(`[v0] ✓ ${modelConfig.name} completed naturally (no truncation)`)
+                }
+              } catch (finishError) {
+                console.error(`[v0] Error getting finish reason for ${modelConfig.name}:`, finishError)
+              }
             } catch (streamError: any) {
               console.error(`[v0] ========== ${modelConfig.name.toUpperCase()} STREAM ERROR ==========`)
-              console.error(`[v0] Stream error:`, streamError)
-              // If stream fails, still try to send what we have
+              console.error(`[v0] Error type: ${streamError.name}`)
+              console.error(`[v0] Error message: ${streamError.message}`)
+              console.error(`[v0] Error stack:`, streamError.stack)
+              console.log(`[v0] Chunks received before error: ${chunkCount}`)
+              console.log(`[v0] Partial response length: ${fullResponse.length} characters`)
+
               if (fullResponse.length > 0) {
-                console.log(`[v0] Partial response available: ${fullResponse.length} characters`)
+                console.log(`[v0] Using partial response (${fullResponse.length} chars)`)
               } else {
-                throw streamError // Re-throw if we have no response at all
+                console.log(`[v0] No partial response available, throwing error`)
+                throw streamError
               }
             }
 
             try {
               const usage = await result.usage
-              console.log(`[v0] Usage object for ${modelConfig.name}:`, JSON.stringify(usage))
+              console.log(`[v0] ${modelConfig.name}: Raw usage object:`, JSON.stringify(usage))
 
               if (usage) {
                 promptTokens = usage.promptTokens || usage.inputTokens || 0
                 completionTokens = usage.completionTokens || usage.outputTokens || 0
+                console.log(
+                  `[v0] ${modelConfig.name}: Prompt tokens: ${promptTokens}, Completion tokens: ${completionTokens}`,
+                )
+
+                if (completionTokens >= 8192) {
+                  console.log(
+                    `[v0] ⚠️  ${modelConfig.name} used ${completionTokens} tokens (at or near maxTokens limit)`,
+                  )
+                }
               }
             } catch (usageError) {
               console.error(`[v0] Error getting usage for ${modelConfig.name}:`, usageError)
-              // Continue without usage data
             }
 
             successfulResponses.push({
@@ -122,13 +172,13 @@ export async function POST(request: NextRequest) {
               response: fullResponse,
             })
 
-            // Send complete event
-            console.log(`[v0] Sending complete event for ${modelConfig.name}`)
+            console.log(`[v0] ========== SENDING COMPLETE EVENT FOR ${modelConfig.name.toUpperCase()} ==========`)
             const completeEvent = `data: ${JSON.stringify({
               type: "complete",
               modelId,
               modelName: modelConfig.name,
               response: fullResponse,
+              finishReason,
               tokenUsage: {
                 promptTokens,
                 completionTokens,
@@ -136,22 +186,30 @@ export async function POST(request: NextRequest) {
               },
             })}\n\n`
             controller.enqueue(encoder.encode(completeEvent))
+            console.log(`[v0] ✓ Complete event sent for ${modelConfig.name}`)
 
             const inputCost = (promptTokens / 1000000) * modelConfig.costPer1MTokens.input
             const outputCost = (completionTokens / 1000000) * modelConfig.costPer1MTokens.output
             const totalCost = inputCost + outputCost
 
             await logUsage(user, modelId, promptTokens, completionTokens, totalCost)
+            console.log(`[v0] ✓ Usage logged for ${modelConfig.name}`)
           } catch (error: any) {
             console.error(`[v0] ========== ${modelConfig?.name || modelId} FAILED ==========`)
-            console.error(`[v0] ${modelConfig?.name || modelId} failed for user ${user.id}:`, error)
+            console.error(`[v0] Error type: ${error.name}`)
+            console.error(`[v0] Error message: ${error.message}`)
+            console.error(`[v0] Is timeout: ${error.message === "Model response timeout"}`)
+
             const errorEvent = `data: ${JSON.stringify({
               type: "error",
               modelId,
               modelName: modelConfig.name,
-              error: error.message,
+              error:
+                error.message === "Model response timeout" ? "Response took too long and was cancelled" : error.message,
             })}\n\n`
             controller.enqueue(encoder.encode(errorEvent))
+            console.log(`[v0] ✓ Error event sent for ${modelConfig.name}`)
+
             await logUsage(user, modelId, 0, 0, 0)
           }
         })
@@ -202,7 +260,6 @@ Provide a thorough analysis (aim for 300-500 words) that helps users understand 
               let summaryPromptTokens = 0
               let summaryCompletionTokens = 0
 
-              // Stream the summary chunks
               for await (const chunk of summaryResult.textStream) {
                 summaryText += chunk
                 console.log(`[v0] Summary chunk received (length: ${chunk.length})`)
@@ -223,7 +280,6 @@ Provide a thorough analysis (aim for 300-500 words) that helps users understand 
                 console.error(`[v0] Error getting summary usage:`, usageError)
               }
 
-              // Send complete summary event
               console.log(`[v0] ========== SUMMARY COMPLETE ==========`)
               console.log(`[v0] Total summary length: ${summaryText.length}`)
               console.log(`[v0] Summary preview: ${summaryText.substring(0, 100)}...`)
@@ -233,7 +289,6 @@ Provide a thorough analysis (aim for 300-500 words) that helps users understand 
               })}\n\n`
               controller.enqueue(encoder.encode(summaryEvent))
 
-              // Log usage for summary (no additional credit deduction, just for tracking)
               const inputCost = (summaryPromptTokens / 1000000) * summaryModelConfig.costPer1MTokens.input
               const outputCost = (summaryCompletionTokens / 1000000) * summaryModelConfig.costPer1MTokens.output
               const totalCost = inputCost + outputCost
@@ -260,7 +315,6 @@ Provide a thorough analysis (aim for 300-500 words) that helps users understand 
           }
         }
 
-        // Send done event
         const doneEvent = `data: ${JSON.stringify({ type: "done" })}\n\n`
         controller.enqueue(encoder.encode(doneEvent))
         controller.close()

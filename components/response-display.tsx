@@ -11,7 +11,6 @@ import { Loader2, AlertCircle, CheckCircle2, MessageSquare, RefreshCw, Copy, Spa
 import { AI_MODELS } from "@/lib/ai-config"
 import { submitToModels, type ModelResponse } from "@/lib/api-client"
 import { MarkdownRenderer } from "@/components/markdown-renderer"
-import { LoadingSpinner } from "@/components/loading-spinner"
 import { ExportDropdown } from "@/components/export-dropdown"
 import { useTopics } from "@/lib/contexts/topics-context"
 import type { ExportData } from "@/lib/export-utils"
@@ -90,10 +89,11 @@ export function ResponseDisplay({
 
     lastSaveCheckRef.current = now
 
-    // Check for new responses to save
     const responsesToSave = responses.filter((response) => {
       const responseId = `${topicId}-${response.modelId}`
-      return response.success && response.response && !savedResponseIdsRef.current.has(responseId)
+      const isComplete = response.success && response.response && !(response as any).isStreaming
+      const notYetSaved = !savedResponseIdsRef.current.has(responseId)
+      return isComplete && notYetSaved
     })
 
     if (responsesToSave.length === 0) {
@@ -104,13 +104,14 @@ export function ResponseDisplay({
     console.log("[v0] Topic ID (from ref):", topicIdRef?.current)
     console.log("[v0] Topic ID (from context):", currentTopicId)
     console.log("[v0] Using topic ID:", topicId)
-    console.log("[v0] New responses to save:", responsesToSave.length)
+    console.log("[v0] New complete responses to save:", responsesToSave.length)
+    console.log("[v0] Models being saved:", responsesToSave.map((r) => r.modelName).join(", "))
 
     // Save all new responses
     responsesToSave.forEach(async (response) => {
       const responseId = `${topicId}-${response.modelId}`
       try {
-        console.log("[v0] Saving response from:", response.modelName)
+        console.log("[v0] Saving complete response from:", response.modelName, `(${response.response.length} chars)`)
         await addMessageToTopic(topicId, "answer", response.response, response.modelName)
         savedResponseIdsRef.current.add(responseId)
         console.log("[v0] Response saved successfully")
@@ -396,17 +397,16 @@ export function ResponseDisplay({
                         </div>
                       </div>
                       <div className="flex items-center space-x-2">
-                        <LoadingSpinner size="sm" className="text-primary" />
+                        <Badge variant="secondary" className="text-xs">
+                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                          Streaming
+                        </Badge>
                       </div>
                     </div>
                   </CardHeader>
 
                   <CardContent className="flex-1 flex flex-col">
                     <div className="flex-1 mb-4">
-                      <div className="flex items-center space-x-3 py-8">
-                        <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                        <span className="text-muted-foreground">Generating response...</span>
-                      </div>
                       <div className="space-y-3">
                         <div className="h-4 bg-muted rounded animate-pulse"></div>
                         <div className="h-4 bg-muted rounded animate-pulse w-3/4"></div>
@@ -422,6 +422,7 @@ export function ResponseDisplay({
           const model = AI_MODELS[response.modelId]
           const isFollowUpLoading = followUpLoading[response.modelId]
           const modelConversations = followUpConversations[response.modelId] || []
+          const isCurrentlyStreaming = (response as any).isStreaming === true
 
           return (
             <Card key={response.modelId} className="flex flex-col h-full">
@@ -439,20 +440,31 @@ export function ResponseDisplay({
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
-                    {response.success && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => copyToClipboard(response.response)}
-                        className="h-8 w-8 p-0"
-                      >
-                        <Copy className="h-4 w-4" />
-                      </Button>
-                    )}
-                    {response.success ? (
-                      <CheckCircle2 className="h-5 w-5 text-green-500" />
+                    {isCurrentlyStreaming ? (
+                      <Badge variant="secondary" className="text-xs">
+                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        Streaming
+                      </Badge>
+                    ) : response.success ? (
+                      <>
+                        <Badge variant="default" className="text-xs bg-green-500 hover:bg-green-600">
+                          <CheckCircle2 className="h-3 w-3 mr-1" />
+                          Complete
+                        </Badge>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => copyToClipboard(response.response)}
+                          className="h-8 w-8 p-0"
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                      </>
                     ) : (
-                      <AlertCircle className="h-5 w-5 text-red-500" />
+                      <Badge variant="destructive" className="text-xs">
+                        <AlertCircle className="h-3 w-3 mr-1" />
+                        Error
+                      </Badge>
                     )}
                   </div>
                 </div>

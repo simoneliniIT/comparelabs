@@ -69,9 +69,22 @@ function ComparePageContent() {
       .slice(lastQuestionIndex + 1)
       .filter((msg) => msg.type === "answer" && msg.model_name)
 
-    // Convert to ModelResponse format
-    return answersAfterLastQuestion.map((msg) => ({
-      modelId: msg.model_name!.toLowerCase().replace(/\s+/g, ""),
+    const responsesByModel = new Map<string, (typeof answersAfterLastQuestion)[0]>()
+    answersAfterLastQuestion.forEach((msg) => {
+      if (msg.model_name) {
+        // Always overwrite with the latest message from this model
+        responsesByModel.set(msg.model_name, msg)
+      }
+    })
+
+    console.log("[v0] Loaded responses from topic messages:")
+    console.log("[v0] - Total answer messages:", answersAfterLastQuestion.length)
+    console.log("[v0] - Unique models after deduplication:", responsesByModel.size)
+    console.log("[v0] - Models:", Array.from(responsesByModel.keys()))
+
+    // Convert to ModelResponse format using deduplicated responses
+    return Array.from(responsesByModel.values()).map((msg) => ({
+      modelId: msg.model_name!.toLowerCase().replace(/\s+/g, "-"),
       modelName: msg.model_name!,
       response: msg.content,
       success: true,
@@ -226,6 +239,7 @@ function ComparePageContent() {
       if (Object.keys(newState).length === 0) {
         console.log("[v0] All streams complete, setting streaming state to false")
         setIsStreaming(false)
+        setIsLoading(false)
       }
 
       return newState
