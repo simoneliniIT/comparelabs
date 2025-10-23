@@ -97,7 +97,6 @@ export async function POST(request: NextRequest) {
             console.log(`[v0] ========== STARTING ${modelConfig.name.toUpperCase()} ==========`)
             console.log(`[v0] Model ID: ${modelId}`)
             console.log(`[v0] Model string: ${modelConfig.modelString}`)
-            console.log(`[v0] Max tokens: 8192`)
             console.log(`[v0] Timeout: ${modelTimeout}ms`)
 
             const result = await Promise.race([streamModelResponse(modelId, prompt, request.signal), timeoutPromise])
@@ -142,9 +141,9 @@ export async function POST(request: NextRequest) {
                 finishReason = (await result.finishReason) || "stop"
                 console.log(`[v0] ${modelConfig.name}: Finish reason = "${finishReason}"`)
                 if (finishReason === "length") {
-                  console.log(`[v0] ⚠️  ${modelConfig.name} hit maxTokens limit (8192) - response was truncated`)
+                  console.log(`[v0] ⚠️  ${modelConfig.name} hit its natural token limit - response may be incomplete`)
                 } else if (finishReason === "stop") {
-                  console.log(`[v0] ✓ ${modelConfig.name} completed naturally (no truncation)`)
+                  console.log(`[v0] ✓ ${modelConfig.name} completed naturally`)
                 }
               } catch (finishError) {
                 console.error(`[v0] Error getting finish reason for ${modelConfig.name}:`, finishError)
@@ -176,10 +175,8 @@ export async function POST(request: NextRequest) {
                   `[v0] ${modelConfig.name}: Prompt tokens: ${promptTokens}, Completion tokens: ${completionTokens}`,
                 )
 
-                if (completionTokens >= 8192) {
-                  console.log(
-                    `[v0] ⚠️  ${modelConfig.name} used ${completionTokens} tokens (at or near maxTokens limit)`,
-                  )
+                if (completionTokens >= 16384) {
+                  console.log(`[v0] ⚠️  ${modelConfig.name} generated ${completionTokens} tokens (very long response)`)
                 }
               }
             } catch (usageError) {

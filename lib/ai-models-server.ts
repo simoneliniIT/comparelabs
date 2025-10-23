@@ -246,7 +246,6 @@ export async function streamModelResponse(modelId: string, prompt: string, signa
   const result = streamText({
     model: gateway(model.modelString),
     prompt,
-    maxTokens: 8192, // ~6000 words - plenty for detailed responses without becoming unwieldy
     temperature: 0.7,
     abortSignal: signal,
   })
