@@ -287,7 +287,7 @@
 }
 
 :root {
-  --radius: 1rem;
+  --radius: 0.25rem;
   --background: oklch(0.99 0.002 264);
   --foreground: oklch(0.15 0.01 264);
   --card: oklch(1.0 0 0);
@@ -323,16 +323,16 @@
 
   /* Refined shadow system for depth and hierarchy */
   --shadow-x: 0px;
-  --shadow-y: 1px;
-  --shadow-blur: 3px;
+  --shadow-y: 0px;
+  --shadow-blur: 4px;
   --shadow-spread: 0px;
-  --shadow-opacity: 0.08;
+  --shadow-opacity: 0.4;
   --shadow-color: #1e3a8a;
 }
 
 @theme inline {
   /* Updated font variables to use Inter and JetBrains Mono instead of Geist */
-  --font-sans: var(--font-inter);
+  --font-sans: var(--v0-font-geist);
   --font-mono: var(--font-jetbrains-mono);
   --font-serif: var(--font-source-serif-4);
   /* computed shadow variables below - do not modify */
