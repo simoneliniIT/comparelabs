@@ -78,6 +78,7 @@ export async function POST(request: NextRequest) {
 
         // Process each model in parallel
         const modelPromises = models.map(async (modelId: string) => {
+          const modelStartTime = Date.now()
           const modelConfig = AI_MODELS[modelId]
           if (!modelConfig) {
             console.log(`[v0] ❌ Model not found in AI_MODELS: ${modelId}`)
@@ -86,7 +87,7 @@ export async function POST(request: NextRequest) {
             return
           }
 
-          console.log(`[v0] ✓ Model ${modelConfig.name} (${modelId}) found, starting processing...`)
+          console.log(`[v0] ✓ Model ${modelConfig.name} (${modelId}) found, starting processing at ${modelStartTime}`)
 
           const modelTimeout = 45000 // 45 seconds per model
           const timeoutPromise = new Promise<never>((_, reject) => {
@@ -98,27 +99,39 @@ export async function POST(request: NextRequest) {
             console.log(`[v0] Model ID: ${modelId}`)
             console.log(`[v0] Model string: ${modelConfig.modelString}`)
             console.log(`[v0] Timeout: ${modelTimeout}ms`)
+            console.log(`[v0] ⏱️  ${modelConfig.name}: Calling streamModelResponse at ${Date.now() - modelStartTime}ms`)
 
-            const result = await Promise.race([streamModelResponse(modelId, prompt, request.signal), timeoutPromise])
+            let result
+            try {
+              result = await Promise.race([streamModelResponse(modelId, prompt, request.signal), timeoutPromise])
+              console.log(`[v0] ⏱️  ${modelConfig.name}: Stream initialized after ${Date.now() - modelStartTime}ms`)
+            } catch (initError: any) {
+              console.error(
+                `[v0] ❌ ${modelConfig.name} failed to initialize after ${Date.now() - modelStartTime}ms:`,
+                initError.message,
+              )
+              console.error(`[v0] Error stack:`, initError.stack)
+              throw initError
+            }
 
             let fullResponse = ""
             let promptTokens = 0
             let completionTokens = 0
             let finishReason = "unknown"
             let chunkCount = 0
+            let receivedFirstChunk = false // Add a flag to track if we received any chunks
 
             try {
               console.log(`[v0] ${modelConfig.name}: Starting stream consumption...`)
               for await (const chunk of result.textStream) {
+                if (!receivedFirstChunk) {
+                  console.log(`[v0] ${modelConfig.name}: ✓ First chunk received!`)
+                  receivedFirstChunk = true
+                }
                 chunkCount++
                 fullResponse += chunk
 
-                // Log every 10th chunk to avoid spam
-                if (chunkCount % 10 === 0) {
-                  console.log(
-                    `[v0] ${modelConfig.name}: Received chunk #${chunkCount}, total length: ${fullResponse.length} chars`,
-                  )
-                }
+                console.log(`[v0] Stream chunk from ${modelConfig.name}: ${chunk}`)
 
                 const streamEvent = `data: ${JSON.stringify({
                   type: "chunk",
@@ -132,6 +145,46 @@ export async function POST(request: NextRequest) {
               console.log(`[v0] ========== ${modelConfig.name.toUpperCase()} STREAM LOOP COMPLETED ==========`)
               console.log(`[v0] Total chunks received: ${chunkCount}`)
               console.log(`[v0] Total response length: ${fullResponse.length} characters`)
+              console.log(`[v0] Received first chunk: ${receivedFirstChunk}`)
+
+              if (fullResponse.length === 0) {
+                console.error(`[v0] ❌ ${modelConfig.name} completed but produced NO CONTENT`)
+                console.error(`[v0] This usually means:`)
+                console.error(`[v0]   1. The model string "${modelConfig.modelString}" is invalid or not supported`)
+                console.error(`[v0]   2. There's an API authentication issue`)
+                console.error(`[v0]   3. The model refused to generate content`)
+                console.error(`[v0]   4. The AI Gateway returned an error that wasn't caught`)
+
+                try {
+                  finishReason = await result.finishReason
+                  console.error(`[v0] Finish reason: ${finishReason}`)
+
+                  const usage = await result.usage
+                  console.error(`[v0] Usage:`, usage)
+
+                  // Check if there's a response object with error details
+                  const response = await result.response
+                  console.error(`[v0] Response object:`, response)
+                } catch (detailError: any) {
+                  console.error(`[v0] Could not get additional error details:`, detailError.message)
+                }
+
+                // Send error event to client
+                const errorEvent = `data: ${JSON.stringify({
+                  type: "error",
+                  modelId,
+                  modelName: modelConfig.name,
+                  error: `${modelConfig.name} produced no content. The model may not be available or the model string "${modelConfig.modelString}" may be invalid.`,
+                })}\n\n`
+                controller.enqueue(encoder.encode(errorEvent))
+
+                // Log usage with 0 tokens
+                await logUsage(user, modelId, 0, 0, 0)
+
+                // Return early without adding to successfulResponses
+                return
+              }
+
               console.log(`[v0] Response preview (first 200 chars): ${fullResponse.substring(0, 200)}...`)
               console.log(
                 `[v0] Response preview (last 200 chars): ...${fullResponse.substring(Math.max(0, fullResponse.length - 200))}`,
@@ -255,10 +308,10 @@ export async function POST(request: NextRequest) {
           })),
         )
         console.log("[v0] Summarization model:", summarizationModel)
-        console.log("[v0] Condition check: enableSummarization && successfulResponses.length > 1")
-        console.log("[v0] Condition result:", enableSummarization && successfulResponses.length > 1)
+        console.log("[v0] Condition check: enableSummarization && successfulResponses.length >= 2")
+        console.log("[v0] Condition result:", enableSummarization && successfulResponses.length >= 2)
 
-        const shouldGenerateSummary = !!enableSummarization && successfulResponses.length > 1
+        const shouldGenerateSummary = !!enableSummarization && successfulResponses.length >= 2
         console.log("[v0] Should generate summary (explicit):", shouldGenerateSummary)
 
         if (shouldGenerateSummary) {
@@ -350,7 +403,7 @@ Provide a thorough analysis (aim for 300-500 words) that helps users understand 
           console.log("[v0] ========== SKIPPING SUMMARY GENERATION ==========")
           if (!enableSummarization) {
             console.log("[v0] Reason: Summarization disabled")
-          } else if (successfulResponses.length <= 1) {
+          } else if (successfulResponses.length < 2) {
             console.log("[v0] Reason: Not enough successful responses (need 2+, got", successfulResponses.length, ")")
           }
         }

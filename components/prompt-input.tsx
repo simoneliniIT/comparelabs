@@ -7,7 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { submitToModels, submitToModelsStreaming, type ModelResponse } from "@/lib/api-client"
 import { AI_MODELS } from "@/lib/ai-config"
 import { createClient } from "@/lib/supabase/client"
-import { Coins, AlertCircle } from "lucide-react"
+import { Coins, AlertCircle, Sparkles } from "lucide-react"
 
 interface PromptInputProps {
   selectedModels: string[]
@@ -117,26 +117,55 @@ export function PromptInput({
 
   return (
     <section className="mb-8 sm:mb-10 md:mb-12 w-full max-w-full">
-      <div className="bg-card border border-border rounded-xl sm:rounded-2xl p-3 sm:p-6 md:p-8 lg:p-12 shadow-lg w-full max-w-full">
-        <h2 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6 text-center break-words">Ask Your Question</h2>
+      <div className="bg-gradient-to-br from-card to-card/95 border-2 border-border/50 rounded-2xl sm:rounded-3xl p-6 sm:p-8 md:p-10 lg:p-12 shadow-xl hover:shadow-2xl transition-shadow duration-300 w-full max-w-full">
+        <div className="flex items-center justify-center gap-3 mb-6 sm:mb-8">
+          <Sparkles className="h-6 w-6 sm:h-7 sm:w-7 text-primary" />
+          <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-center bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text text-transparent">
+            Ask Your Question
+          </h2>
+        </div>
 
-        <div className="space-y-4 sm:space-y-6 w-full max-w-full">
-          <Textarea
-            placeholder="Enter your prompt here... (e.g., 'Explain quantum computing in simple terms')"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            className="min-h-24 sm:min-h-32 text-base sm:text-lg resize-none bg-background border-border w-full"
-            disabled={isLoading}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && autoSubmit) {
-                e.preventDefault()
-                handleSubmit()
-              }
-            }}
-          />
+        <div className="space-y-5 sm:space-y-6 w-full max-w-full">
+          <div className="relative">
+            <Textarea
+              placeholder="Enter your prompt here... (e.g., 'Explain quantum computing in simple terms')"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              className="min-h-32 sm:min-h-40 text-base sm:text-lg resize-none bg-background/50 backdrop-blur-sm border-2 border-border focus:border-primary focus:ring-4 focus:ring-primary/20 rounded-xl transition-all duration-200 w-full shadow-inner"
+              disabled={isLoading}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey && autoSubmit) {
+                  e.preventDefault()
+                  handleSubmit()
+                }
+              }}
+            />
+          </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 w-full max-w-full">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 min-w-0">
+          <div className="flex flex-col gap-4 w-full max-w-full">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 bg-muted/30 rounded-xl p-4 border border-border/50">
+              <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+                <div className="flex items-center gap-2 text-sm sm:text-base">
+                  <Coins className="h-4 w-4 sm:h-5 sm:w-5 text-primary flex-shrink-0" />
+                  <span className="text-muted-foreground">Cost:</span>
+                  <span className="font-bold text-foreground text-lg">{totalCredits}</span>
+                  <span className="text-muted-foreground">credits</span>
+                </div>
+
+                {remainingCredits !== null && (
+                  <div
+                    className={`flex items-center gap-2 text-sm sm:text-base ${
+                      hasInsufficientCredits ? "text-destructive font-semibold" : "text-muted-foreground"
+                    }`}
+                  >
+                    {hasInsufficientCredits && <AlertCircle className="h-4 w-4 sm:h-5 sm:w-5 flex-shrink-0" />}
+                    <span>→</span>
+                    <span className="font-bold text-lg">{Math.max(0, remainingCredits)}</span>
+                    <span>remaining</span>
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="auto-submit"
@@ -144,47 +173,35 @@ export function PromptInput({
                   onCheckedChange={(checked) => setAutoSubmit(checked as boolean)}
                   disabled={isLoading}
                 />
-                <label htmlFor="auto-submit" className="text-xs sm:text-sm text-muted-foreground whitespace-nowrap">
+                <label htmlFor="auto-submit" className="text-sm text-muted-foreground whitespace-nowrap cursor-pointer">
                   Auto-submit on Enter
                 </label>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">
-                <div className="flex items-center gap-1.5 text-xs sm:text-sm">
-                  <Coins className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground flex-shrink-0" />
-                  <span className="text-muted-foreground">Cost:</span>
-                  <span className="font-semibold text-foreground">{totalCredits}</span>
-                  <span className="text-muted-foreground whitespace-nowrap">credits</span>
-                </div>
-
-                {remainingCredits !== null && (
-                  <div
-                    className={`flex items-center gap-1.5 text-xs sm:text-sm ${
-                      hasInsufficientCredits ? "text-destructive" : "text-muted-foreground"
-                    }`}
-                  >
-                    {hasInsufficientCredits && <AlertCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" />}
-                    <span>→</span>
-                    <span className="font-semibold">{Math.max(0, remainingCredits)}</span>
-                    <span className="whitespace-nowrap">remaining</span>
-                  </div>
-                )}
               </div>
             </div>
 
             <Button
               onClick={handleSubmit}
               disabled={!prompt.trim() || selectedModels.length === 0 || isLoading || hasInsufficientCredits}
-              className="gradient-bg hover:opacity-90 px-4 sm:px-8 w-full sm:w-auto text-sm sm:text-base whitespace-nowrap"
+              size="lg"
+              className="gradient-bg hover:opacity-90 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 px-8 py-6 w-full text-base sm:text-lg font-semibold shadow-lg hover:shadow-xl"
             >
-              {isLoading ? "Sending..." : <span className="hidden sm:inline">Send to All Models</span>}
-              {isLoading ? "" : <span className="sm:hidden">Send to Models</span>}
+              {isLoading ? (
+                <span className="flex items-center gap-2">
+                  <span className="animate-spin">⏳</span>
+                  Sending to Models...
+                </span>
+              ) : (
+                <span className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5" />
+                  Send to All Models
+                </span>
+              )}
             </Button>
           </div>
 
           {hasInsufficientCredits && (
-            <div className="flex items-start gap-2 text-xs sm:text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg p-3 w-full max-w-full">
-              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+            <div className="flex items-start gap-3 text-sm text-destructive bg-destructive/10 border-2 border-destructive/30 rounded-xl p-4 w-full max-w-full">
+              <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
               <span className="break-words">
                 Insufficient credits. You need {totalCredits} credits but only have {availableCredits}. Please upgrade
                 your plan or select fewer models.
@@ -193,7 +210,7 @@ export function PromptInput({
           )}
 
           {selectedModels.length === 0 && (
-            <p className="text-xs sm:text-sm text-muted-foreground text-center break-words">
+            <p className="text-sm text-muted-foreground text-center break-words bg-muted/20 rounded-lg p-3 border border-border/30">
               Please select at least one model to compare
             </p>
           )}

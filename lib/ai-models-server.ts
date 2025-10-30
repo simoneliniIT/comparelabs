@@ -33,9 +33,9 @@ export function getServerAIModels(): Record<string, AIModelConfig> {
       gradient: "chatgpt-gradient",
       icon: "🤖",
       modelString: "openai/gpt-5",
-      contextWindow: 400000,
+      contextWindow: 128000,
       costPer1MTokens: {
-        input: 1.25,
+        input: 2.5,
         output: 10.0,
       },
       bucket: "performance",
@@ -243,12 +243,25 @@ export async function streamModelResponse(modelId: string, prompt: string, signa
   console.log(`[v0] Streaming ${model.name} using AI Gateway with model string: ${model.modelString}`)
   console.log(`[v0] AI Gateway API Key configured: ${process.env.AI_GATEWAY_API_KEY ? "YES" : "NO"}`)
 
-  const result = streamText({
-    model: gateway(model.modelString),
-    prompt,
-    temperature: 0.7,
-    abortSignal: signal,
-  })
+  try {
+    const result = streamText({
+      model: gateway(model.modelString),
+      prompt,
+      temperature: 0.7,
+      abortSignal: signal,
+    })
 
-  return result
+    console.log(`[v0] ${model.name}: streamText() call succeeded, stream object created`)
+
+    return result
+  } catch (error: any) {
+    console.error(`[v0] ${model.name}: streamText() call failed:`, error)
+    console.error(`[v0] Error details:`, {
+      name: error.name,
+      message: error.message,
+      cause: error.cause,
+      stack: error.stack,
+    })
+    throw error
+  }
 }

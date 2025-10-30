@@ -7,13 +7,24 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, AlertCircle, CheckCircle2, MessageSquare, RefreshCw, Copy, Sparkles } from "lucide-react"
+import {
+  Loader2,
+  AlertCircle,
+  CheckCircle2,
+  MessageSquare,
+  RefreshCw,
+  Copy,
+  Sparkles,
+  Maximize2,
+  X,
+} from "lucide-react"
 import { AI_MODELS } from "@/lib/ai-config"
 import { submitToModels, submitToModelsStreaming, type ModelResponse } from "@/lib/api-client"
 import { MarkdownRenderer } from "@/components/markdown-renderer"
 import { ExportDropdown } from "@/components/export-dropdown"
 import { useTopics } from "@/lib/contexts/topics-context"
 import type { ExportData } from "@/lib/export-utils"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 interface ResponseDisplayProps {
   responses: ModelResponse[]
@@ -51,6 +62,7 @@ export function ResponseDisplay({
   const [followUpConversations, setFollowUpConversations] = useState<Record<string, FollowUpConversation[]>>({})
   const [retryLoading, setRetryLoading] = useState<Record<string, boolean>>({})
   const [followUpResponses, setFollowUpResponses] = useState<Record<string, ModelResponse[]>>({})
+  const [expandedResponseId, setExpandedResponseId] = useState<string | null>(null)
 
   const savedResponseIdsRef = useRef<Set<string>>(new Set())
   const lastSaveCheckRef = useRef<number>(0)
@@ -290,6 +302,9 @@ export function ResponseDisplay({
     followUpResponses,
   }
 
+  const expandedResponse = expandedResponseId ? responses.find((r) => r.modelId === expandedResponseId) : null
+  const expandedModel = expandedResponseId ? AI_MODELS[expandedResponseId] : null
+
   if (!isLoading && responses.length === 0 && selectedModels.length === 0) {
     return null
   }
@@ -310,7 +325,6 @@ export function ResponseDisplay({
 
       {enableSummarization && (
         <div className="relative w-full max-w-full overflow-hidden">
-          {/* Gradient border effect */}
           <div className="absolute inset-0 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 rounded-2xl blur-sm opacity-20"></div>
 
           <Card className="relative w-full max-w-full overflow-hidden border-2 border-primary/20 bg-gradient-to-br from-background via-background to-primary/5 shadow-xl">
@@ -480,8 +494,18 @@ export function ResponseDisplay({
                         <Button
                           variant="ghost"
                           size="sm"
+                          onClick={() => setExpandedResponseId(response.modelId)}
+                          className="h-8 w-8 p-0"
+                          title="Expand to full screen"
+                        >
+                          <Maximize2 className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => copyToClipboard(response.response)}
                           className="h-8 w-8 p-0"
+                          title="Copy to clipboard"
                         >
                           <Copy className="h-4 w-4" />
                         </Button>
@@ -589,6 +613,50 @@ export function ResponseDisplay({
           )
         })}
       </div>
+
+      <Dialog open={!!expandedResponseId} onOpenChange={(open) => !open && setExpandedResponseId(null)}>
+        <DialogContent className="max-w-5xl w-[95vw] h-[90vh] flex flex-col p-0">
+          <DialogHeader className="px-6 py-4 border-b flex-shrink-0">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                {expandedModel && (
+                  <div
+                    className={`w-12 h-12 rounded-lg ${expandedModel.gradient || "bg-gray-500"} flex items-center justify-center flex-shrink-0`}
+                  >
+                    <span className="text-2xl">{expandedModel.icon || "🤖"}</span>
+                  </div>
+                )}
+                <div>
+                  <DialogTitle className="text-2xl font-bold">{expandedResponse?.modelName}</DialogTitle>
+                  <p className="text-sm text-muted-foreground mt-1">{expandedModel?.description}</p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => expandedResponse && copyToClipboard(expandedResponse.response)}
+                  className="flex items-center gap-2"
+                >
+                  <Copy className="h-4 w-4" />
+                  Copy
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setExpandedResponseId(null)} className="h-9 w-9 p-0">
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto px-6 py-6">
+            {expandedResponse && (
+              <div className="prose prose-lg max-w-none dark:prose-invert prose-headings:font-bold prose-headings:text-foreground prose-p:text-foreground/90 prose-p:leading-relaxed prose-li:text-foreground/90 prose-strong:text-foreground prose-strong:font-semibold prose-code:text-foreground prose-pre:bg-muted">
+                <MarkdownRenderer content={expandedResponse.response} />
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </section>
   )
 }

@@ -59,54 +59,76 @@ export function ExportDropdown({ data, disabled = false }: ExportDropdownProps) 
       const { jsPDF } = await import("jspdf")
       const html2canvas = (await import("html2canvas")).default
 
-      // Create a temporary div with the PDF content
-      const tempDiv = document.createElement("div")
-      tempDiv.innerHTML = generatePDFContent(data)
-      tempDiv.style.position = "absolute"
-      tempDiv.style.left = "-9999px"
-      tempDiv.style.width = "800px"
-      tempDiv.style.backgroundColor = "#ffffff"
-      tempDiv.style.color = "#000000"
-      // Force all child elements to use standard colors
-      tempDiv.style.setProperty("color-scheme", "light")
-      document.body.appendChild(tempDiv)
+      const iframe = document.createElement("iframe")
+      iframe.style.position = "absolute"
+      iframe.style.left = "-9999px"
+      iframe.style.width = "800px"
+      iframe.style.height = "1px"
+      document.body.appendChild(iframe)
 
-      const allElements = tempDiv.querySelectorAll("*")
-      allElements.forEach((el) => {
-        const htmlEl = el as HTMLElement
-        const computedStyle = window.getComputedStyle(htmlEl)
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
+      if (!iframeDoc) {
+        throw new Error("Failed to create iframe document")
+      }
 
-        // Convert background color if it uses oklch
-        const bgColor = computedStyle.backgroundColor
-        if (bgColor && bgColor.includes("oklch")) {
-          htmlEl.style.backgroundColor = "#ffffff"
-        }
+      // Write the content with a complete HTML document structure
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <style>
+              * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+              }
+              body {
+                font-family: Arial, sans-serif;
+                background-color: #ffffff;
+                color: #000000;
+                padding: 20px;
+              }
+            </style>
+          </head>
+          <body>
+            ${generatePDFContent(data)}
+          </body>
+        </html>
+      `
 
-        // Convert text color if it uses oklch
-        const textColor = computedStyle.color
-        if (textColor && textColor.includes("oklch")) {
-          htmlEl.style.color = "#000000"
-        }
+      iframeDoc.open()
+      iframeDoc.write(htmlContent)
+      iframeDoc.close()
 
-        // Convert border color if it uses oklch
-        const borderColor = computedStyle.borderColor
-        if (borderColor && borderColor.includes("oklch")) {
-          htmlEl.style.borderColor = "#cccccc"
+      // Wait for iframe to fully load
+      await new Promise((resolve) => {
+        if (iframe.contentWindow) {
+          iframe.contentWindow.addEventListener("load", resolve)
+        } else {
+          setTimeout(resolve, 100)
         }
       })
 
-      // Convert to canvas
-      const canvas = await html2canvas(tempDiv, {
+      const contentDiv = iframeDoc.body
+      if (!contentDiv) {
+        throw new Error("Failed to get iframe body")
+      }
+
+      // Convert to canvas using the iframe content
+      const canvas = await html2canvas(contentDiv, {
         width: 800,
-        height: tempDiv.scrollHeight,
+        height: contentDiv.scrollHeight,
         scale: 2,
         useCORS: true,
         allowTaint: true,
         backgroundColor: "#ffffff",
+        windowWidth: 800,
+        windowHeight: contentDiv.scrollHeight,
       })
 
-      // Remove temporary div
-      document.body.removeChild(tempDiv)
+      // Remove iframe
+      document.body.removeChild(iframe)
 
       // Create PDF
       const pdf = new jsPDF("p", "mm", "a4")
