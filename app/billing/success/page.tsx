@@ -1,8 +1,23 @@
+"use client"
+
+import { useEffect } from "react"
 import Link from "next/link"
 import { CheckCircle, Sparkles, ArrowRight, CreditCard } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 export default function BillingSuccessPage() {
+  useEffect(() => {
+    // Fire conversion event for Google Ads
+    if (typeof window !== "undefined" && (window as any).gtag) {
+      ;(window as any).gtag("event", "conversion", {
+        send_to: "AW-17659980815",
+        value: 1.0,
+        currency: "USD",
+      })
+      console.log("[v0] Google Ads conversion event fired")
+    }
+  }, [])
+
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4 relative overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-secondary/5" />
