@@ -188,6 +188,9 @@ export default function SignupPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                 />
+                <p className="text-sm text-muted-foreground">
+                  Please double-check your email address. We'll send a verification email to complete your signup.
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
