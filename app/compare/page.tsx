@@ -92,6 +92,17 @@ function ComparePageContent() {
     }))
   }
 
+  const getPromptFromTopicMessages = (): string => {
+    if (!currentTopicMessages.length) return ""
+
+    // Find the last question to get the most recent prompt
+    const questions = currentTopicMessages.filter((msg) => msg.type === "question")
+    if (!questions.length) return ""
+
+    const lastQuestion = questions[questions.length - 1]
+    return lastQuestion.content || ""
+  }
+
   const getConversationHistoryMessages = () => {
     if (!currentTopicMessages.length) return []
 
@@ -111,11 +122,19 @@ function ComparePageContent() {
   }
 
   const topicResponses = getResponsesFromTopicMessages()
+  const topicPrompt = getPromptFromTopicMessages()
   const conversationHistoryMessages = getConversationHistoryMessages()
   const hasTopicWithMessages = currentTopicId && currentTopicMessages.length > 0
   const shouldShowMainPromptInput = !hasTopicWithMessages
 
   const responsesRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (hasTopicWithMessages && topicPrompt && topicPrompt !== currentPrompt) {
+      console.log("[v0] Setting prompt from topic messages:", topicPrompt)
+      setCurrentPrompt(topicPrompt)
+    }
+  }, [hasTopicWithMessages, topicPrompt])
 
   useEffect(() => {
     // Wait for topics context to finish loading before attempting to load topic from URL
@@ -408,7 +427,7 @@ function ComparePageContent() {
                 onNewResponses={handleNewResponses}
                 isLoading={isLoading}
                 selectedModels={selectedModels}
-                currentPrompt={currentPrompt}
+                currentPrompt={hasTopicWithMessages ? topicPrompt : currentPrompt}
                 enableSummarization={enableSummarization}
                 summarizationModel={summarizationModel}
                 summary={summary}

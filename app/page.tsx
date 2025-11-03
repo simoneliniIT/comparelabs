@@ -1,19 +1,19 @@
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
 import { HeroSection } from "@/components/hero-section"
+import { TryItFreeSection } from "@/components/try-it-free-section"
 import { HowItWorksSection } from "@/components/how-it-works-section"
 import { ModelShowcase } from "@/components/model-showcase"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 
 export default function Home() {
-  // Authentication will be handled on the compare/signup pages
-
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Header />
       <main className="flex-1 container mx-auto px-4 py-8">
         <HeroSection />
+        <TryItFreeSection />
         <HowItWorksSection />
         <ModelShowcase />
 

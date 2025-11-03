@@ -1,9 +1,17 @@
+"use client"
+
 import { Button } from "@/components/ui/button"
-import Link from "next/link"
 import { Sparkles, GitCompare, Brain } from "lucide-react"
 import Image from "next/image"
 
 export function HeroSection() {
+  const scrollToTryItFree = () => {
+    const element = document.getElementById("try-it-free")
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", block: "start" })
+    }
+  }
+
   return (
     <section className="text-center py-12 sm:py-16 md:py-20 lg:py-24 mb-12 sm:mb-16 md:mb-20 px-4">
       <div className="max-w-4xl mx-auto">
@@ -50,17 +58,16 @@ export function HeroSection() {
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center items-center mb-12 sm:mb-16">
-          <Link href="/auth/signup" className="w-full sm:w-auto">
-            <Button
-              size="lg"
-              className="gradient-bg hover:opacity-90 text-base sm:text-lg px-6 sm:px-8 py-3 sm:py-4 w-full sm:w-auto"
-            >
-              Try Free Now
-            </Button>
-          </Link>
+          <Button
+            size="lg"
+            onClick={scrollToTryItFree}
+            className="gradient-bg hover:opacity-90 text-base sm:text-lg px-6 sm:px-8 py-3 sm:py-4 w-full sm:w-auto"
+          >
+            Try Free Now
+          </Button>
         </div>
 
-        <div className="bg-white rounded-xl py-6 sm:py-8 px-4">
+        <div className="bg-white rounded-xl py-6 sm:py-8 px-4" id="try-it-free">
           <div className="text-xs sm:text-sm text-muted-foreground mb-4">Using the best models from</div>
           <div className="flex flex-wrap justify-center items-center gap-8 sm:gap-10 md:gap-12 mt-3 sm:mt-4 opacity-70">
             <Image

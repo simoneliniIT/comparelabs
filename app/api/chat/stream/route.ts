@@ -5,6 +5,10 @@ import { getServerAIModels, streamModelResponse } from "@/lib/ai-models-server"
 
 export const maxDuration = 60
 
+const QUICK_TIER_MODELS = ["llama-4-maverick", "grok-4-fast-reasoning", "gemini-2.5-flash-lite", "gpt-4.1-nano"]
+const FREE_TRY_LIMIT = 3 // Allow 3 free tries per IP per day
+const FREE_TRY_WINDOW_HOURS = 24
+
 export async function POST(request: NextRequest) {
   try {
     const { prompt, models, enableSummarization, summarizationModel } = await request.json()
@@ -26,38 +30,98 @@ export async function POST(request: NextRequest) {
       error: authError,
     } = await supabase.auth.getUser()
 
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: "Authentication required" }), { status: 401 })
-    }
+    const isAuthenticated = !authError && !!user
+    console.log("[v0] User authenticated:", isAuthenticated)
 
-    const modelAccess = await checkModelAccess(user, models)
-    if (!modelAccess.allowed) {
-      return new Response(
-        JSON.stringify({
-          error: modelAccess.reason,
-          allowedModels: modelAccess.allowedModels,
-        }),
-        { status: 403 },
-      )
-    }
+    if (!isAuthenticated) {
+      const hasNonQuickModels = models.some((modelId: string) => !QUICK_TIER_MODELS.includes(modelId))
+      if (hasNonQuickModels) {
+        console.log("[v0] Unauthenticated user attempted to use non-quick tier models")
+        return new Response(
+          JSON.stringify({
+            error: "Please sign up to access premium models",
+            allowedModels: QUICK_TIER_MODELS,
+          }),
+          { status: 403 },
+        )
+      }
 
-    const usageCheck = await checkUsageLimit(user, models)
-    if (!usageCheck.allowed) {
-      return new Response(
-        JSON.stringify({
-          error: usageCheck.reason,
-          remainingCredits: usageCheck.remainingCredits,
-        }),
-        { status: 429 },
-      )
-    }
+      const ipAddress =
+        request.headers.get("x-forwarded-for")?.split(",")[0] || request.headers.get("x-real-ip") || "unknown"
+      const userAgent = request.headers.get("user-agent") || "unknown"
 
-    try {
-      await deductCreditsForComparison(user, models)
-      console.log(`[v0] Successfully deducted credits for user ${user.id}`)
-    } catch (error) {
-      console.error(`[v0] Failed to deduct credits for user ${user.id}:`, error)
-      return new Response(JSON.stringify({ error: "Failed to deduct credits. Please try again." }), { status: 500 })
+      console.log("[v0] Checking rate limit for IP:", ipAddress)
+
+      // Check how many free tries this IP has used in the last 24 hours
+      const windowStart = new Date(Date.now() - FREE_TRY_WINDOW_HOURS * 60 * 60 * 1000).toISOString()
+
+      const { data: recentTries, error: rateLimitError } = await supabase
+        .from("free_try_logs")
+        .select("id")
+        .eq("ip_address", ipAddress)
+        .gte("created_at", windowStart)
+
+      if (rateLimitError) {
+        console.error("[v0] Error checking rate limit:", rateLimitError)
+        // Continue anyway - don't block users if rate limit check fails
+      } else if (recentTries && recentTries.length >= FREE_TRY_LIMIT) {
+        console.log(`[v0] IP ${ipAddress} has exceeded free try limit (${recentTries.length}/${FREE_TRY_LIMIT})`)
+        return new Response(
+          JSON.stringify({
+            error: `You've used all ${FREE_TRY_LIMIT} free tries. Sign up for free to continue comparing AI models!`,
+            rateLimitExceeded: true,
+          }),
+          { status: 429 },
+        )
+      }
+
+      console.log(`[v0] IP ${ipAddress} has used ${recentTries?.length || 0}/${FREE_TRY_LIMIT} free tries`)
+
+      const { error: logError } = await supabase.from("free_try_logs").insert({
+        ip_address: ipAddress,
+        user_agent: userAgent,
+        prompt: prompt.substring(0, 500), // Store first 500 chars
+        models_used: models,
+      })
+
+      if (logError) {
+        console.error("[v0] Error logging free try:", logError)
+        // Continue anyway - don't block users if logging fails
+      } else {
+        console.log("[v0] Free try logged successfully")
+      }
+
+      console.log("[v0] Allowing unauthenticated request with quick tier models only")
+    } else {
+      const modelAccess = await checkModelAccess(user, models)
+      if (!modelAccess.allowed) {
+        return new Response(
+          JSON.stringify({
+            error: modelAccess.reason,
+            allowedModels: modelAccess.allowedModels,
+          }),
+          { status: 403 },
+        )
+      }
+
+      const usageCheck = await checkUsageLimit(user, models)
+      if (!usageCheck.allowed) {
+        return new Response(
+          JSON.stringify({
+            error: usageCheck.reason,
+            remainingCredits: usageCheck.remainingCredits,
+          }),
+          { status: 429 },
+        )
+      }
+
+      try {
+        await deductCreditsForComparison(user, models)
+        console.log(`[v0] Successfully deducted credits for user ${user.id}`)
+      } catch (error) {
+        console.error(`[v0] Failed to deduct credits for user ${user.id}:`, error)
+        return new Response(JSON.stringify({ error: "Failed to deduct credits. Please try again." }), { status: 500 })
+      }
     }
 
     const encoder = new TextEncoder()
@@ -178,8 +242,9 @@ export async function POST(request: NextRequest) {
                 })}\n\n`
                 controller.enqueue(encoder.encode(errorEvent))
 
-                // Log usage with 0 tokens
-                await logUsage(user, modelId, 0, 0, 0)
+                if (isAuthenticated && user) {
+                  await logUsage(user, modelId, 0, 0, 0)
+                }
 
                 // Return early without adding to successfulResponses
                 return
@@ -264,12 +329,41 @@ export async function POST(request: NextRequest) {
             controller.enqueue(encoder.encode(completeEvent))
             console.log(`[v0] ✓ Complete event sent for ${modelConfig.name}`)
 
-            const inputCost = (promptTokens / 1000000) * modelConfig.costPer1MTokens.input
-            const outputCost = (completionTokens / 1000000) * modelConfig.costPer1MTokens.output
-            const totalCost = inputCost + outputCost
+            if (isAuthenticated && user) {
+              const inputCost = (promptTokens / 1000000) * modelConfig.costPer1MTokens.input
+              const outputCost = (completionTokens / 1000000) * modelConfig.costPer1MTokens.output
+              const totalCost = inputCost + outputCost
 
-            await logUsage(user, modelId, promptTokens, completionTokens, totalCost)
-            console.log(`[v0] ✓ Usage logged for ${modelConfig.name}`)
+              await logUsage(user, modelId, promptTokens, completionTokens, totalCost)
+              console.log(`[v0] ✓ Usage logged for ${modelConfig.name}`)
+            } else {
+              // Log free try usage with cost tracking
+              const inputCost = (promptTokens / 1000000) * modelConfig.costPer1MTokens.input
+              const outputCost = (completionTokens / 1000000) * modelConfig.costPer1MTokens.output
+              const totalCost = inputCost + outputCost
+
+              const ipAddress =
+                request.headers.get("x-forwarded-for")?.split(",")[0] || request.headers.get("x-real-ip") || "unknown"
+
+              // Update the free_try_logs entry with cost data
+              const { error: updateError } = await supabase
+                .from("free_try_logs")
+                .update({
+                  cost_usd: totalCost,
+                  prompt_tokens: promptTokens,
+                  completion_tokens: completionTokens,
+                  total_tokens: promptTokens + completionTokens,
+                })
+                .eq("ip_address", ipAddress)
+                .order("created_at", { ascending: false })
+                .limit(1)
+
+              if (updateError) {
+                console.error(`[v0] Error updating free try cost:`, updateError)
+              } else {
+                console.log(`[v0] ✓ Free try cost logged for IP ${ipAddress}: $${totalCost.toFixed(6)}`)
+              }
+            }
           } catch (error: any) {
             console.error(`[v0] ========== ${modelConfig?.name || modelId} FAILED ==========`)
             console.error(`[v0] Error type: ${error.name}`)
@@ -286,7 +380,9 @@ export async function POST(request: NextRequest) {
             controller.enqueue(encoder.encode(errorEvent))
             console.log(`[v0] ✓ Error event sent for ${modelConfig.name}`)
 
-            await logUsage(user, modelId, 0, 0, 0)
+            if (isAuthenticated && user) {
+              await logUsage(user, modelId, 0, 0, 0)
+            }
           }
         })
 
@@ -311,10 +407,10 @@ export async function POST(request: NextRequest) {
         console.log("[v0] Condition check: enableSummarization && successfulResponses.length >= 2")
         console.log("[v0] Condition result:", enableSummarization && successfulResponses.length >= 2)
 
-        const shouldGenerateSummary = !!enableSummarization && successfulResponses.length >= 2
+        const shouldGenerateSummary = isAuthenticated && !!enableSummarization && successfulResponses.length >= 2
         console.log("[v0] Should generate summary (explicit):", shouldGenerateSummary)
 
-        if (shouldGenerateSummary) {
+        if (shouldGenerateSummary && user) {
           try {
             console.log(`[v0] ========== STARTING SUMMARY GENERATION ==========`)
             console.log(`[v0] Generating summary using ${summarizationModel || "chatgpt"}...`)
@@ -401,7 +497,9 @@ Provide a thorough analysis (aim for 300-500 words) that helps users understand 
           }
         } else {
           console.log("[v0] ========== SKIPPING SUMMARY GENERATION ==========")
-          if (!enableSummarization) {
+          if (!isAuthenticated) {
+            console.log("[v0] Reason: User not authenticated")
+          } else if (!enableSummarization) {
             console.log("[v0] Reason: Summarization disabled")
           } else if (successfulResponses.length < 2) {
             console.log("[v0] Reason: Not enough successful responses (need 2+, got", successfulResponses.length, ")")

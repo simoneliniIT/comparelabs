@@ -20,6 +20,11 @@ interface ExportDropdownProps {
 
 export function ExportDropdown({ data, disabled = false }: ExportDropdownProps) {
   const [isExporting, setIsExporting] = useState(false)
+  const [open, setOpen] = useState(false)
+
+  const handleOpenChange = (newOpen: boolean) => {
+    setOpen(newOpen)
+  }
 
   const handleCopyToClipboard = async () => {
     try {
@@ -55,6 +60,14 @@ export function ExportDropdown({ data, disabled = false }: ExportDropdownProps) 
   const handlePDFExport = async () => {
     setIsExporting(true)
     try {
+      console.log("[v0] ========== PDF EXPORT DEBUG ==========")
+      console.log("[v0] Export data summary:", data.summary)
+      console.log("[v0] Summary length:", data.summary?.length || 0)
+      console.log("[v0] Summary exists:", !!data.summary)
+      console.log("[v0] Number of responses:", data.responses.length)
+      console.log("[v0] Prompt:", data.prompt)
+      console.log("[v0] ========================================")
+
       // Dynamic import to avoid loading jsPDF on initial page load
       const { jsPDF } = await import("jspdf")
       const html2canvas = (await import("html2canvas")).default
@@ -192,7 +205,7 @@ export function ExportDropdown({ data, disabled = false }: ExportDropdownProps) 
   }
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>
         <Button
           variant="outline"

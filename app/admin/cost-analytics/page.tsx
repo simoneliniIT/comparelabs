@@ -58,6 +58,12 @@ export default async function AdminCostAnalyticsPage() {
   const thirtyDaysAgo = new Date()
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
 
+  const { data: freeTryLogs } = await adminClient
+    .from("free_try_logs")
+    .select("*")
+    .gte("created_at", thirtyDaysAgo.toISOString())
+    .order("created_at", { ascending: false })
+
   const { data: creditTransactions } = await adminClient
     .from("credit_transactions")
     .select("user_id, amount, created_at, transaction_type")
@@ -130,6 +136,25 @@ export default async function AdminCostAnalyticsPage() {
       dateMap.set(log.user_id, { cost: 0, tokens: 0, queries: 0, credits: 0 })
     }
     const userStats = dateMap.get(log.user_id)!
+    userStats.cost += Number(log.cost_usd) || 0
+    userStats.tokens += log.total_tokens || 0
+    userStats.queries += 1
+  })
+
+  freeTryLogs?.forEach((log) => {
+    const date = new Date(log.created_at).toLocaleDateString()
+    if (!dailyByUser.has(date)) {
+      dailyByUser.set(date, new Map())
+    }
+    const dateMap = dailyByUser.get(date)!
+    // Use IP address as the "user ID" for free tries
+    const guestId = `guest_${log.ip_address}`
+    if (!dateMap.has(guestId)) {
+      dateMap.set(guestId, { cost: 0, tokens: 0, queries: 0, credits: 0 })
+      // Add to userMap with IP as email
+      userMap.set(guestId, { email: log.ip_address, name: "Guest User" })
+    }
+    const userStats = dateMap.get(guestId)!
     userStats.cost += Number(log.cost_usd) || 0
     userStats.tokens += log.total_tokens || 0
     userStats.queries += 1
